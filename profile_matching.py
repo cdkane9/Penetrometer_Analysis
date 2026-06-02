@@ -4,6 +4,7 @@ from scipy.ndimage import gaussian_filter1d
 import os
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, LinearConstraint
+from scipy.spatial.distance import cosine
 
 
 '''
@@ -113,7 +114,7 @@ def transform(depths, force, alphas, delta_L=4):
 
 # STEP 4a: Define cost function - MSE of difference in log-hardness between
 #          two profiles
-def distance(ref_hard, ref_d, prof_hard):
+def distance_mse(ref_hard, ref_d, prof_hard):
     '''
     calculate mean squared difference of hardness between two profiles on log-scale
     adapted from Hagenmuller and Pilloix 2016
@@ -133,8 +134,21 @@ def distance(ref_hard, ref_d, prof_hard):
 
     return total_cost / h_tot
 
+
+# STEP 4a: Define cost function - minimize (1 - pearson correlation)
+def distance_correlation(ref_hard, ref_d, prof_hard):
+    corr_matrix = np.corrcoef(ref_hard, prof_hard)
+    if np.isnan(corr_matrix[0, 1]):
+        return 1
+    return 1 - corr_matrix[0, 1]
+
+
+# STEP 4a: Define cost function - minimize cosine distance
+def distance_cosine(ref_hard, ref_d, prof_hard):
+    return cosine(ref_hard + 1e-6, prof_hard + 1e-6)
+
 # STEP 4b: Optimize values of alpha to minimize distance function
-def objective_function(alphas, ref, prof, delta_L=4):
+def objective_function(alphas, ref, prof, optimize_func, delta_L=4):
     '''
     Objective function to minimize: for an array of alpha values,
     transform profile depth, interpolate back to compare with reference
@@ -152,7 +166,7 @@ def objective_function(alphas, ref, prof, delta_L=4):
     interp_prof_force = np.interp(ref['depth'], transformed_depths, prof['force'])
 
     # calculate distance between transformed profile and reference profile
-    cost = distance(ref['force'], ref['depth'], interp_prof_force)
+    cost = optimize_func(ref['force'], ref['depth'], interp_prof_force)
 
     return cost
 
@@ -161,7 +175,7 @@ def variability():
     pass
 
 # STEP 5: Find best values for alpha
-def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7, global_epsilon=0.2):
+def minimize_cost(prof, ref_prof, optimize_func, delta_L, lower_bound=0.3, upper_bound=1.7, global_epsilon=0.1):
     '''
     minimize objective function to find best values for alpha
     :param prof: profile to be stretched/thinned
@@ -191,7 +205,7 @@ def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7, glo
     result = minimize(
         objective_function,
         alpha_0,
-        args=(ref_prof, prof, delta_L),
+        args=(ref_prof, prof, optimize_func, delta_L),
         method='SLSQP',
         bounds=bounds,
         constraints=global_depth_constraint
@@ -209,6 +223,7 @@ def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7, glo
 
 def wrapper(reference:str, profile:str,
             type_ref:str, type_prof:str,
+            optimizing_function,
             delta_L:int=4,
             delta_h:int=1,
             lower_bound:float=0.3,
@@ -218,7 +233,8 @@ def wrapper(reference:str, profile:str,
     :param reference: path to reference profile
     :param profile: path to profile to be stretched/thinned
     :param type_ref: type of reference profile (usually SMP)
-    :param type_prof: type of profile to be stretched/thinned (Snow Scope, ram),
+    :param type_prof: type of profile to be stretched/thinned (Snow Scope, ram)
+    :param optimizing_function: optimizing function to be used on profile
     :param delta_L: arbitrary chunk thickness that will be stretched/thinned [cm]
     :param delta_h: std. of gaussian used to smooth profiles
     :param lower/upper_bound: bounds for alphas (set at +/-70%) from Hagenmuller and Pilloix 2016
@@ -237,7 +253,7 @@ def wrapper(reference:str, profile:str,
         # Assumes SMP has already been converted to a .csv of raw sample data
         ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
         ref_raw.columns = ['depth', 'force']
-        ref_raw['force'] *= 2.98
+        #ref_raw['force'] *= 2.98
     else:
         raise ValueError('Unknown reference profile type\n'
                          'Must be [scope, ram, smp]')
@@ -264,6 +280,7 @@ def wrapper(reference:str, profile:str,
 
     # Do the profile matching
     match_prof, ref_prof, best_alphas = minimize_cost(prof_resamp, ref_resamp,
+                                                      optimizing_function,
                                                       delta_L=delta_L,
                                                       lower_bound=lower_bound,
                                                       upper_bound=upper_bound)
@@ -323,8 +340,8 @@ if __name__ == '__main__':
 
 
 
-    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, scope_b, 4)
-    matched_scope_b, smp_b, _ = minimize_cost(scope_b, smp_b, 4)
+    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, scope_b, distance_cosine, 4)
+    matched_scope_b, smp_b, _ = minimize_cost(scope_b, smp_b, distance_mse, 4)
 
     matched_scope_a, smp_a = same_depth(matched_scope_a, smp_a)
 
