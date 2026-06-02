@@ -11,7 +11,8 @@ Outline:
     Read in profiles and resample to matching 0.1cm 1D grid
     Assign 'artificial layers' ==> chunk into 4cm layers
     Find best alpha values to transform each artifical layer
-    Resample and linearly interpolate back to original depth grid        
+    Resample and linearly interpolate back to original depth grid.
+    Code was based on Hagenmuller and Pilloix 2016  
 '''
 
 # remove header info from scope profiles
@@ -36,7 +37,7 @@ def same_depth(prof_a, prof_b):
     return prof_a_trim, prof_b_trim
 
 # STEP 1: Resample and smooth profile
-def resample(df, delta_h):
+def resample(df, delta_h=1):
     ''' resample a profile with gaussian kernel and linear interpolation'''
     og_res = df['depth'].iloc[1] - df['depth'].iloc[0]
     target_resolution = delta_h
@@ -189,13 +190,74 @@ def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7):
     return matched_profile, ref_prof, best_alphas
 
 
+def wrapper(reference:str, profile:str,
+            type_ref:str, type_prof:str,
+            delta_L:int=4,
+            delta_h:int=1,
+            lower_bound:float=0.3,
+            upper_bound:float=1.7,):
+    '''
+    Calls all necessary functions for vertically shifting a profile to match a provided reference
+    :param reference: path to reference profile
+    :param profile: path to profile to be stretched/thinned
+    :param type_ref: type of reference profile (usually SMP)
+    :param type_prof: type of profile to be stretched/thinned (Snow Scope, ram),
+    :param delta_L: arbitrary chunk thickness that will be stretched/thinned [cm]
+    :param delta_h: std. of gaussian used to smooth profiles
+    :param lower/upper_bound: bounds for alphas (set at +/-70%) from Hagenmuller and Pilloix 2016
+    :return: ref_prof    ==>  the unaltered reference profile
+             best_alphas ==>  best values to stretch/thin profile
+             match_prof  ==>  stretched/thinned profile
+    '''
+    # TODO: capabilities for intraset variability, option for passing multiple profiles?
+
+    # read in each file based on the type
+    if type_ref == 'scope':
+        ref_raw = scope_head(pd.read_csv(reference, skiprows=1, usecols=[0, 1]))
+    elif type_ref == 'ram':
+        pass
+    elif type_ref == 'smp':
+        # Assumes SMP has already been converted to a .csv of raw sample data
+        ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
+        ref_raw.columns = ['depth', 'force']
+    else:
+        raise ValueError('Unknown reference profile type\n'
+                         'Must be [scope, ram, smp]')
+
+    if type_prof == 'scope':
+        prof_raw = scope_head(pd.read_csv(profile, skiprows=1, usecols=[0, 1]))
+    elif type_prof == 'ram':
+        pass
+    elif type_prof == 'smp':
+        # Assumes SMP has already been converted to a .csv of raw sample data
+        prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
+        prof_raw.columns = ['depth', 'force']
+    else:
+        raise ValueError('Unkown profile type\n'
+                         'Must be [scope, ram, smp]')
+
+    # ensure profiles are same depth by trimming off excess from deeper profile
+    ref, prof = same_depth(ref_raw, prof_raw)
+
+    # smooth profiles w/ gaussian filter kernel (std. dev. = delta_h)
+    ref = resample(ref, delta_h)
+    prof = resample(prof, delta_h)
+
+    # Do the profile matching
+    match_prof, ref_prof, best_alphas = minimize_cost(prof, ref,
+                                                      delta_L=delta_L,
+                                                      lower_bound=lower_bound,
+                                                      upper_bound=upper_bound)
+
+
+    return ref_prof, match_prof, best_alphas
 
 
 
 
 if __name__ == '__main__':
 
-    data_path = '/Users/colemankane/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
+    data_path = '/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
     scopes = os.path.join(data_path, 'Snow_Scope')
     scope_lst = os.listdir(scopes)
 
