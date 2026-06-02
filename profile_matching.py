@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.ndimage import gaussian_filter1d
 import os
 import matplotlib.pyplot as plt
-from scipy.optimize import minimize
+from scipy.optimize import minimize, LinearConstraint
 
 
 '''
@@ -44,7 +44,7 @@ def resample(df, delta_h=1):
     window_size = target_resolution // og_res
 
     sigma = window_size / 2
-    smoothed = gaussian_filter1d(df.iloc[:, 1], sigma=sigma)
+    smoothed = gaussian_filter1d(df['force'], sigma=sigma)
 
     og_depths = np.arange(len(df)) * og_res
     target_depths = np.arange(0, og_depths.max(), target_resolution)
@@ -97,10 +97,17 @@ def transform(depths, force, alphas, delta_L=4):
 
         j = int(h // delta_L)
 
-        if j >= len(alphas): j = len(alphas) - 1
+        if j >= len(alphas):
+            last_layer_ix = len(alphas) - 1
+            base_offset = offsets[last_layer_ix]
 
-        h_in_layer = h % delta_L
-        h_T[i] = offsets[j] + (alphas[j] * h_in_layer)
+            h_from_last_layer_start = h - (last_layer_ix * delta_L)
+
+            h_T[i] = base_offset + (alphas[last_layer_ix] * h_from_last_layer_start)
+
+        else:
+            h_in_layer = h % delta_L
+            h_T[i] = offsets[j] + (alphas[j] * h_in_layer)
 
     return h_T
 
@@ -154,7 +161,7 @@ def variability():
     pass
 
 # STEP 5: Find best values for alpha
-def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7):
+def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7, global_epsilon=0.2):
     '''
     minimize objective function to find best values for alpha
     :param prof: profile to be stretched/thinned
@@ -170,14 +177,24 @@ def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7):
     # intitial guess is that alpha = 1
     alpha_0 = np.ones(num_layers)
 
+    # sets bounds for amount of stretch/thin that can occur for any one layer
     bounds = [(lower_bound, upper_bound) for _ in range(num_layers)]
+
+    # set bounds to limit total depth change of profile
+    low_global = (1 - global_epsilon) * num_layers
+    high_global = (1 + global_epsilon) * num_layers
+
+    # build a placeholder matrix to pass into LinearConstraint
+    matrix_to_sum = np.ones((1, num_layers))
+    global_depth_constraint = LinearConstraint(matrix_to_sum, low_global, high_global)
 
     result = minimize(
         objective_function,
         alpha_0,
         args=(ref_prof, prof, delta_L),
-        method='Powell',
-        bounds=bounds
+        method='SLSQP',
+        bounds=bounds,
+        constraints=global_depth_constraint
     )
     best_alphas = result.x
 
@@ -220,6 +237,7 @@ def wrapper(reference:str, profile:str,
         # Assumes SMP has already been converted to a .csv of raw sample data
         ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
         ref_raw.columns = ['depth', 'force']
+        ref_raw['force'] *= 2.98
     else:
         raise ValueError('Unknown reference profile type\n'
                          'Must be [scope, ram, smp]')
@@ -240,17 +258,18 @@ def wrapper(reference:str, profile:str,
     ref, prof = same_depth(ref_raw, prof_raw)
 
     # smooth profiles w/ gaussian filter kernel (std. dev. = delta_h)
-    ref = resample(ref, delta_h)
-    prof = resample(prof, delta_h)
+    ref_resamp = resample(ref, delta_h)
+
+    prof_resamp = resample(prof.copy(), delta_h)
 
     # Do the profile matching
-    match_prof, ref_prof, best_alphas = minimize_cost(prof, ref,
+    match_prof, ref_prof, best_alphas = minimize_cost(prof_resamp, ref_resamp,
                                                       delta_L=delta_L,
                                                       lower_bound=lower_bound,
                                                       upper_bound=upper_bound)
 
 
-    return ref_prof, match_prof, best_alphas
+    return ref_prof, match_prof, best_alphas, prof_resamp
 
 
 
