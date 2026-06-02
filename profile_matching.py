@@ -1,0 +1,289 @@
+import numpy as np
+import pandas as pd
+from scipy.ndimage import gaussian_filter1d
+import os
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+
+'''
+Outline:
+    Read in profiles and resample to matching 0.1cm 1D grid
+    Assign 'artificial layers' ==> chunk into 4cm layers
+    Find best alpha values to transform each artifical layer
+    Resample and linearly interpolate back to original depth grid        
+'''
+
+# remove header info from scope profiles
+def scope_head(df):
+    idx_init = df[df.iloc[:, 0] == 'depth (mm)'].index[0]
+    scope_prof = df.iloc[idx_init + 1:].reset_index(drop=True).astype(float)
+    scope_prof.columns = ['depth', 'force']
+    scope_prof['force'] *= 1000 * 0.0000554
+    return scope_prof
+
+# for profiles of drastically different depths, remove excess of deeper profile
+def same_depth(prof_a, prof_b):
+    max_a = np.max(prof_a['depth'])
+    max_b = np.max(prof_b['depth'])
+    max_depth = np.min([max_a, max_b])
+
+    prof_a_trim = prof_a[prof_a['depth'] < max_depth]
+
+    prof_b_trim = prof_b[prof_b['depth'] < max_depth]
+
+
+    return prof_a_trim, prof_b_trim
+
+# STEP 1: Resample and smooth profile
+def resample(df, delta_h):
+    ''' resample a profile with gaussian kernel and linear interpolation'''
+    og_res = df['depth'].iloc[1] - df['depth'].iloc[0]
+    target_resolution = delta_h
+    window_size = target_resolution // og_res
+
+    sigma = window_size / 2
+    smoothed = gaussian_filter1d(df.iloc[:, 1], sigma=sigma)
+
+    og_depths = np.arange(len(df)) * og_res
+    target_depths = np.arange(0, og_depths.max(), target_resolution)
+
+    resamp_values = np.interp(target_depths, og_depths, smoothed)
+
+    # resamples with 1mm resolution, returns dataframe in centimeteres
+    resamp_df = pd.DataFrame({'depth': target_depths / 10, 'force': resamp_values})
+
+    return resamp_df
+
+
+# STEP 2: Divide into arbitrary layers with thickness delta_L
+def delta_L(profile, delta_l=4):
+    '''
+    decompse profile onto specified 1-D grid with layer thickness l
+    :param profile:
+    :param delta_l: minimum layer thickness to preserve
+    :return: profile with indices of layers
+    '''
+    depth = profile['depth']
+    profile['layer_ix'] = (depth // delta_l).astype(int)
+    return profile
+
+# STEP 3: Multiply delta_L from STEP 2 by some alpha to stretch/shrink
+#         original arbitrary layer thickness (\alpha_j * \delta_L)
+def transform(depths, force, alphas, delta_L=4):
+    '''
+    stretches/thins layer j by factor of alpha_j
+    essentially multiply the depth values by some factor
+    if alpha < 1 ==> thinning
+    if alpha > 1 ==> stretching
+    if alpha = 1 ==> no change
+    :param profile: profile with indices of layers
+    :return:
+    '''
+    original_d = np.asanyarray(depths)
+    original_f = np.asanyarray(force)
+    alphas = np.asanyarray(alphas)
+
+    layer_thickness = alphas * delta_L
+    offsets = np.zeros(len(alphas) + 1)
+    offsets[1:] = np.cumsum(layer_thickness)
+
+    # transformed depths
+    h_T = np.empty(len(original_d))
+
+    for i in range(len(original_d)):
+        h = original_d[i]
+
+        j = int(h // delta_L)
+
+        if j >= len(alphas): j = len(alphas) - 1
+
+        h_in_layer = h % delta_L
+        h_T[i] = offsets[j] + (alphas[j] * h_in_layer)
+
+    return h_T
+
+# STEP 4a: Define cost function - MSE of difference in log-hardness between
+#          two profiles
+def distance(ref_hard, ref_d, prof_hard):
+    '''
+    calculate mean squared difference of hardness between two profiles on log-scale
+    adapted from Hagenmuller and Pilloix 2016
+    :param reference: reference profile (pd.DataFrame)
+    :param profile: profile to be evaluated (pd.DataFrame)
+    :return: mean-squared difference on log-scale
+    '''
+
+    dx = ref_d.iloc[1] - ref_d.iloc[0]
+    h_tot = ref_d.iloc[-1]
+
+    ref_sigma = np.log(ref_hard + 1e-6)
+    prof_sigma = np.log(prof_hard + 1e-6)
+
+    diff_sq = dx * (ref_sigma - prof_sigma)**2
+    total_cost = np.sum(diff_sq)
+
+    return total_cost / h_tot
+
+# STEP 4b: Optimize values of alpha to minimize distance function
+def objective_function(alphas, ref, prof, delta_L=4):
+    '''
+    Objective function to minimize: for an array of alpha values,
+    transform profile depth, interpolate back to compare with reference
+    profile and returns distance cost.
+    :param alphas:
+    :param ref_df:
+    :param prof_df:
+    :param delta_L:
+    :return:
+    '''
+    # do first profile transformation
+    transformed_depths = transform(prof['depth'], prof['force'], alphas, delta_L)
+
+    # interpolate transformed profile back onto 1mm grid
+    interp_prof_force = np.interp(ref['depth'], transformed_depths, prof['force'])
+
+    # calculate distance between transformed profile and reference profile
+    cost = distance(ref['force'], ref['depth'], interp_prof_force)
+
+    return cost
+
+# STEP 4c: Intra-set variability - compare set of profiles without designating one as a reference
+def variability():
+    pass
+
+# STEP 5: Find best values for alpha
+def minimize_cost(prof, ref_prof, delta_L, lower_bound=0.3, upper_bound=1.7):
+    '''
+    minimize objective function to find best values for alpha
+    :param prof: profile to be stretched/thinned
+    :param ref_prof: reference profile (usually SMP)
+    :param lower_bound: lower bound for alphas
+    :param upper_bound: upper bounds for alphas
+    :return: transformed profile that matches ref_prof
+    '''
+
+    # determine number of layers of thickness \delta_L
+    num_layers = int(ref_prof['depth'].max() / delta_L)
+
+    # intitial guess is that alpha = 1
+    alpha_0 = np.ones(num_layers)
+
+    bounds = [(lower_bound, upper_bound) for _ in range(num_layers)]
+
+    result = minimize(
+        objective_function,
+        alpha_0,
+        args=(ref_prof, prof, delta_L),
+        method='Powell',
+        bounds=bounds
+    )
+    best_alphas = result.x
+
+    matched_depth = transform(prof['depth'], prof['force'], best_alphas, delta_L=delta_L)
+    matched_profile = pd.DataFrame({
+        'depth': matched_depth,
+        'force': prof['force']
+    })
+
+    return matched_profile, ref_prof, best_alphas
+
+
+
+
+
+
+if __name__ == '__main__':
+
+    data_path = '/Users/colemankane/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
+    scopes = os.path.join(data_path, 'Snow_Scope')
+    scope_lst = os.listdir(scopes)
+
+    smps = os.path.join(data_path, 'smp_profiles_exports')
+    smp_lst = os.listdir(smps)
+
+    # scope profile: SN340 PN 33, 34, 35, 36, 38
+    # smp profiles: SN19, PN 552 - 561
+
+    scope_pns = ['33', '34', '35', '36', '38']
+    smp_pns = list(range(552, 562))
+    smp_pns = [str(i) for i in smp_pns]
+    smp_paths = [os.path.join(smps, f'S19M{i.zfill(4)}.PNT_samples.csv') for i in smp_pns]
+
+    scope_ids = [f'Profile{i}_SN00340' for i in scope_pns]
+    scope_paths = [next((f for f in scope_lst if i in f), None) for i in scope_ids]
+    scope_paths = [os.path.join(scopes, i) for i in scope_paths]
+
+    # read in snow scopes, function also renames columns to 'depth' and 'force'
+    scope_a = scope_head(pd.read_csv(scope_paths[2], skiprows=1, usecols=[0, 1]))
+    scope_b = scope_head(pd.read_csv(scope_paths[-2], skiprows=1, usecols=[0, 1]))
+
+    # read in smps, rename columns
+    smp_a = pd.read_csv(smp_paths[1], low_memory=False, skiprows=0, usecols=[1, 2])
+    smp_b = pd.read_csv(smp_paths[1], low_memory=False, skiprows=0, usecols=[1, 2])
+    smp_a.columns = ['depth', 'force']
+    smp_b.columns = ['depth', 'force']
+
+
+    #smp_a['force'] *= 61.9
+    #smp_b['force'] *= 61.9
+
+    # resample to 1mm grid, but depth in units of cm
+    scope_a = resample(scope_a, 1)
+    scope_b = resample(scope_b, 1)
+
+    smp_a = resample(smp_a, 1)
+    #smp_a['force'] *= 2.98
+    smp_b = resample(smp_b, 1)
+    #smp_b['force'] *= 2.98
+
+    scope_a, smp_a = same_depth(scope_a, smp_a)
+    scope_b, smp_b = same_depth(scope_b, smp_b)
+
+
+
+    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, scope_b, 4)
+    matched_scope_b, smp_b, _ = minimize_cost(scope_b, smp_b, 4)
+
+    matched_scope_a, smp_a = same_depth(matched_scope_a, smp_a)
+
+    matched_scope_b, smp_b = same_depth(matched_scope_b, smp_b)
+
+    fig, ax = plt.subplots(1, 3, figsize=(14, 7), sharey=True)
+
+    # Subplot 1: Profile Alignment
+    ax[0].plot(scope_a['force'], scope_a['depth'], label='Original Scope', alpha=0.5, color='gray')
+    ax[0].plot(matched_scope_a['force'], matched_scope_a['depth'], label='Matched Scope', color='blue')
+    ax[0].plot(smp_a['force'], smp_a['depth'], label='Reference SMP', color='green', alpha=0.7)
+    ax[0].set_title('Profile Matching Alignment')
+    ax[0].set_xlabel('Force/Hardness')
+    ax[0].set_ylabel('Depth (cm)')
+    ax[0].legend()
+    ax[0].grid(True, alpha=0.3)
+
+    # Subplot 2: Alpha Scaling per layer
+    num_layers = len(best_alphas)
+    layer_midpoints = np.arange(num_layers) * 4 + 2  # 4cm thickness, midpoint is +2
+    ax[1].barh(layer_midpoints, best_alphas - 1.0, height=4 * 0.8, left=1.0,
+               color=['crimson' if a < 1 else 'teal' for a in best_alphas], alpha=0.7)
+    ax[1].axvline(1.0, color='black', linestyle='--')
+    ax[1].set_title('Layer Expansion/Compression ($\\alpha$)')
+    ax[1].set_xlabel('Scale Factor')
+    ax[1].grid(axis='x', alpha=0.3)
+
+    # Subplot 3: Absolute Displacement Path
+    displacement = matched_scope_a['depth'] - scope_a['depth']
+    ax[2].plot(displacement, scope_a['depth'], color='purple', linewidth=2)
+    ax[2].axvline(0, color='black', linestyle='--')
+    ax[2].set_title('Net Physical Shift')
+    ax[2].set_xlabel('Displacement (cm)')
+    ax[2].grid(True, alpha=0.3)
+
+    # Invert y-axis for the whole shared figure view
+    ax[0].invert_yaxis()
+
+    plt.tight_layout()
+    plt.show()
+
+
+
