@@ -142,14 +142,16 @@ def scope_smp_comp(df:pd.DataFrame):
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
 
-    # conver to array for calculating regression
+    # convert to array for calculating regression
     all_scope_vals = np.array(all_scope_vals)
     all_smp_vals = np.array(all_smp_vals)
 
+    # calculate correlation statistics
     res_of_mean = stats.linregress(all_smp_vals[:, 0], all_scope_vals[:, 0])
     res_of_max = stats.linregress(all_smp_vals[:, 1], all_scope_vals[:, 1])
     res_of_min = stats.linregress(all_smp_vals[:, 2], all_scope_vals[:, 2])
 
+    # unpack statistics into an array
     arr_of_mean = np.array(
         [res_of_mean.slope, res_of_mean.intercept, res_of_mean.rvalue ** 2, res_of_mean.pvalue, res_of_mean.stderr])
     arr_of_max = np.array(
@@ -162,6 +164,10 @@ def scope_smp_comp(df:pd.DataFrame):
 
 if __name__ == '__main__':
     layer_scope, layer_smp, metrics, _, _ = scope_smp_comp(get_pen_paths('scope_smp'))
-    plt.scatter(layer_scope[:, 0], layer_smp[: 0])
+
+    scope_means = layer_scope[:, 0]
+    smp_means = layer_smp[:, 0]
+
+    plt.scatter(scope_means, smp_means)
     plt.show()
     pass
