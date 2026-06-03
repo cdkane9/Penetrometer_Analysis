@@ -21,8 +21,15 @@ def scope_head(df):
     idx_init = df[df.iloc[:, 0] == 'depth (mm)'].index[0]
     scope_prof = df.iloc[idx_init + 1:].reset_index(drop=True).astype(float)
     scope_prof.columns = ['depth', 'force']
+    # convert from kPa to N
     scope_prof['force'] *= 1000 * 0.0000554
     return scope_prof
+
+# pull out depth and force columns from ram profile
+def ram_head(df):
+    df['depth'] = df['l_cm'] * 10
+    df['force'] = df['rr_N']
+    return df
 
 # for profiles of drastically different depths, remove excess of deeper profile
 def same_depth(prof_a, prof_b):
@@ -42,15 +49,22 @@ def resample(df, delta_h=1):
     ''' resample a profile with gaussian kernel and linear interpolation'''
     og_res = df['depth'].iloc[1] - df['depth'].iloc[0]
     target_resolution = delta_h
-    window_size = target_resolution // og_res
 
-    sigma = window_size / 2
-    smoothed = gaussian_filter1d(df['force'], sigma=sigma)
+    if og_res >= target_resolution:
+        og_depths = df['depth'].values
+        target_depths = np.arange(0, og_depths.max(), target_resolution)
+        resamp_values = np.interp(target_depths, og_depths, df['force'].values)
 
-    og_depths = np.arange(len(df)) * og_res
-    target_depths = np.arange(0, og_depths.max(), target_resolution)
+    else:
+        window_size = target_resolution // og_res
 
-    resamp_values = np.interp(target_depths, og_depths, smoothed)
+        sigma = window_size / 2
+        smoothed = gaussian_filter1d(df['force'], sigma=sigma)
+
+        og_depths = np.arange(len(df)) * og_res
+        target_depths = np.arange(0, og_depths.max(), target_resolution)
+
+        resamp_values = np.interp(target_depths, og_depths, smoothed)
 
     # resamples with 1mm resolution, returns dataframe in centimeteres
     resamp_df = pd.DataFrame({'depth': target_depths / 10, 'force': resamp_values})
@@ -145,6 +159,7 @@ def distance_correlation(ref_hard, ref_d, prof_hard):
 
 # STEP 4a: Define cost function - minimize cosine distance
 def distance_cosine(ref_hard, ref_d, prof_hard):
+    # SciPy does 1 - cosine() under the hood, so minimize this function
     return cosine(ref_hard + 1e-6, prof_hard + 1e-6)
 
 # STEP 4b: Optimize values of alpha to minimize distance function
@@ -168,6 +183,7 @@ def objective_function(alphas, ref, prof, optimize_func, delta_L=4):
     # calculate distance between transformed profile and reference profile
     cost = optimize_func(ref['force'], ref['depth'], interp_prof_force)
 
+
     return cost
 
 # STEP 4c: Intra-set variability - compare set of profiles without designating one as a reference
@@ -175,7 +191,7 @@ def variability():
     pass
 
 # STEP 5: Find best values for alpha
-def minimize_cost(prof, ref_prof, optimize_func, delta_L, lower_bound=0.3, upper_bound=1.7, global_epsilon=0.1):
+def minimize_cost(prof, ref_prof, optimize_func, delta_L, lower_bound=0.1, upper_bound=1.9, global_epsilon=0.2):
     '''
     minimize objective function to find best values for alpha
     :param prof: profile to be stretched/thinned
@@ -211,6 +227,7 @@ def minimize_cost(prof, ref_prof, optimize_func, delta_L, lower_bound=0.3, upper
         constraints=global_depth_constraint
     )
     best_alphas = result.x
+    score = result.fun
 
     matched_depth = transform(prof['depth'], prof['force'], best_alphas, delta_L=delta_L)
     matched_profile = pd.DataFrame({
@@ -218,7 +235,9 @@ def minimize_cost(prof, ref_prof, optimize_func, delta_L, lower_bound=0.3, upper
         'force': prof['force']
     })
 
-    return matched_profile, ref_prof, best_alphas
+    return matched_profile, ref_prof, best_alphas, score
+
+######################################################################################################
 
 
 def wrapper(reference:str, profile:str,
@@ -242,26 +261,28 @@ def wrapper(reference:str, profile:str,
              best_alphas ==>  best values to stretch/thin profile
              match_prof  ==>  stretched/thinned profile
     '''
-    # TODO: capabilities for intraset variability, option for passing multiple profiles?
+    # TODO: capabilities for ram, intraset variability, option for passing multiple profiles?
 
     # read in each file based on the type
     if type_ref == 'scope':
         ref_raw = scope_head(pd.read_csv(reference, skiprows=1, usecols=[0, 1]))
     elif type_ref == 'ram':
-        pass
+        ref_raw = ram_head(pd.read_csv(reference))
     elif type_ref == 'smp':
         # Assumes SMP has already been converted to a .csv of raw sample data
         ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
         ref_raw.columns = ['depth', 'force']
-        #ref_raw['force'] *= 2.98
+
     else:
         raise ValueError('Unknown reference profile type\n'
                          'Must be [scope, ram, smp]')
 
     if type_prof == 'scope':
         prof_raw = scope_head(pd.read_csv(profile, skiprows=1, usecols=[0, 1]))
+
     elif type_prof == 'ram':
-        pass
+        prof_raw = ram_head(pd.read_csv(profile))
+
     elif type_prof == 'smp':
         # Assumes SMP has already been converted to a .csv of raw sample data
         prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
@@ -279,14 +300,17 @@ def wrapper(reference:str, profile:str,
     prof_resamp = resample(prof.copy(), delta_h)
 
     # Do the profile matching
-    match_prof, ref_prof, best_alphas = minimize_cost(prof_resamp, ref_resamp,
+    match_prof, ref_prof, best_alphas, score = minimize_cost(prof_resamp, ref_resamp,
                                                       optimizing_function,
                                                       delta_L=delta_L,
                                                       lower_bound=lower_bound,
                                                       upper_bound=upper_bound)
 
 
-    return ref_prof, match_prof, best_alphas, prof_resamp
+    return ref_prof, match_prof, best_alphas, prof_resamp, score
+
+
+######################################################################################################
 
 
 
@@ -322,6 +346,10 @@ if __name__ == '__main__':
     smp_a.columns = ['depth', 'force']
     smp_b.columns = ['depth', 'force']
 
+    ram_path = os.path.join(data_path, 'BDG_20250115_sram.csv')
+    ram = pd.read_csv(ram_path)
+    print(ram)
+
 
     #smp_a['force'] *= 61.9
     #smp_b['force'] *= 61.9
@@ -340,7 +368,7 @@ if __name__ == '__main__':
 
 
 
-    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, scope_b, distance_cosine, 4)
+    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, smp_a, distance_cosine, 4)
     matched_scope_b, smp_b, _ = minimize_cost(scope_b, smp_b, distance_mse, 4)
 
     matched_scope_a, smp_a = same_depth(matched_scope_a, smp_a)

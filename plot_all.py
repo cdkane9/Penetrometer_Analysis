@@ -4,6 +4,13 @@ import os
 import random as rand
 import ast
 from profile_matching import *
+from scipy.spatial.distance import cosine
+
+
+'''
+Quick script that selects random snow scope and SMP from given pit
+and matches the scope to SMP for all data collected.
+'''
 
 
 caca = pd.read_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles.csv')
@@ -16,7 +23,7 @@ caca['smp_paths'] = caca['smp_paths'].dropna().apply(ast.literal_eval)
 
 caca_filt = caca[
     (caca['scope_paths'].str.len() > 0) &
-    (caca['smp_paths'].str.len() > 0)
+    (caca['smp_paths'].str.len()>0)
 ].reset_index()
 rand_pits = rand.sample(list(caca_filt.index), len(caca_filt))
 print(len(caca_filt))
@@ -24,19 +31,21 @@ for i in rand_pits:
 
     smp_paths = caca_filt['smp_paths'].iloc[i]
     scope_paths = caca_filt['scope_paths'].iloc[i]
+    ram_path = caca_filt['ram'].iloc[i]
 
     smp_path = rand.choice(smp_paths)
     scope_path = rand.choice(scope_paths)
 
-    print(smp_path)
 
-    smp, match_scope, best_alphas, og_scope = wrapper(
+
+    smp, match_scope, best_alphas, og_scope, score = wrapper(
         smp_path, scope_path,
         'smp', 'scope',
         distance_cosine
     )
 
 
+    print(score)
 
 
 
