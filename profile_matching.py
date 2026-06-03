@@ -261,7 +261,7 @@ def wrapper(reference:str, profile:str,
              best_alphas ==>  best values to stretch/thin profile
              match_prof  ==>  stretched/thinned profile
     '''
-    # TODO: capabilities for ram, intraset variability, option for passing multiple profiles?
+    # TODO: capabilities intraset variability, option for passing multiple profiles?
 
     # read in each file based on the type
     if type_ref == 'scope':
@@ -368,8 +368,8 @@ if __name__ == '__main__':
 
 
 
-    matched_scope_a, smp_a, best_alphas = minimize_cost(scope_a, smp_a, distance_cosine, 4)
-    matched_scope_b, smp_b, _ = minimize_cost(scope_b, smp_b, distance_mse, 4)
+    matched_scope_a, smp_a, best_alphas, cost = minimize_cost(scope_a, smp_a, distance_cosine, 4)
+    matched_scope_b, smp_b, _, _ = minimize_cost(scope_b, smp_b, distance_mse, 4)
 
     matched_scope_a, smp_a = same_depth(matched_scope_a, smp_a)
 
