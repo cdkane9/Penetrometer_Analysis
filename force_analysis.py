@@ -165,25 +165,44 @@ def scope_smp_comp(df:pd.DataFrame):
     if len(all_smp_vals) < 2:
         arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
         return all_scope_vals, all_smp_vals, arr_nan, arr_nan, arr_nan
+    ############ NEW ##########
+    # try other slope and r^2 calculation
+    x = all_smp_vals[:, 0]
+    y = all_scope_vals[:, 0]
+
+    def target_func(x, m, b):
+        return m * x + b
+
+    popt, _ = curve_fit(target_func, x, y)
+    slope_mean = popt[0]
+    int_mean = popt[1]
+
+    # Calculate uncentered R^2 manually
+    residuals = y - target_func(x, slope_mean, int_mean)
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum(y ** 2)
+    r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
 
     # calculate correlation statistics
-    res_of_mean = stats.linregress(all_smp_vals[:, 0], all_scope_vals[:, 0])
-    res_of_max = stats.linregress(all_smp_vals[:, 1], all_scope_vals[:, 1])
-    res_of_min = stats.linregress(all_smp_vals[:, 2], all_scope_vals[:, 2])
+    #res_of_mean = stats.linregress(all_smp_vals[:, 0], all_scope_vals[:, 0])
+    #res_of_max = stats.linregress(all_smp_vals[:, 1], all_scope_vals[:, 1])
+    #res_of_min = stats.linregress(all_smp_vals[:, 2], all_scope_vals[:, 2])
 
     # unpack statistics into an array
-    arr_of_mean = np.array(
-        [res_of_mean.slope, res_of_mean.intercept, res_of_mean.rvalue ** 2, res_of_mean.pvalue, res_of_mean.stderr])
-    arr_of_max = np.array(
-        [res_of_max.slope, res_of_max.intercept, res_of_max.rvalue ** 2, res_of_max.pvalue, res_of_max.stderr])
-    arr_of_min = np.array(
-        [res_of_min.slope, res_of_min.intercept, res_of_min.rvalue ** 2, res_of_min.pvalue, res_of_min.stderr])
+    #arr_of_mean = np.array(
+    #    [res_of_mean.slope, res_of_mean.intercept, res_of_mean.rvalue ** 2, res_of_mean.pvalue, res_of_mean.stderr])
+    #arr_of_max = np.array(
+    #    [res_of_max.slope, res_of_max.intercept, res_of_max.rvalue ** 2, res_of_max.pvalue, res_of_max.stderr])
+    #arr_of_min = np.array(
+    #    [res_of_min.slope, res_of_min.intercept, res_of_min.rvalue ** 2, res_of_min.pvalue, res_of_min.stderr])
+    arr_of_max = None
+    arr_of_min = None
 
-    return all_scope_vals, all_smp_vals, arr_of_mean, arr_of_max, arr_of_min
+    return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean#arr_of_mean, arr_of_max, arr_of_min
 
 
 if __name__ == '__main__':
-    num_iters = 25
+    num_iters = 100
 
     r2s = np.zeros(num_iters)
     slopes = np.zeros(num_iters)
@@ -199,12 +218,19 @@ if __name__ == '__main__':
         print(f'Iteration: {iter_idx + 1}')
         print('############################################')
         # scope_smp_comp randomly pairs profiles and performs the linear regression
-        scope_vals, smp_vals, arr_of_mean, _, _ = scope_smp_comp(pen_df)
+        #scope_vals, smp_vals, arr_of_mean, _, _ = scope_smp_comp(pen_df)
+        scope_vals, smp_vals, slope, intercept, r2 = scope_smp_comp(pen_df)
 
         # Store iteration-specific tracking metrics (Slope, Intercept, R^2)
-        slopes[iter_idx] = arr_of_mean[0]
-        intercepts[iter_idx] = arr_of_mean[1]
-        r2s[iter_idx] = arr_of_mean[2]
+        #slopes[iter_idx] = arr_of_mean[0]
+        #intercepts[iter_idx] = arr_of_mean[1]
+        #r2s[iter_idx] = arr_of_mean[2]
+        slopes[iter_idx] = slope
+        intercepts[iter_idx] = intercept
+        r2s[iter_idx] = r2
+
+
+
 
         # Extract the column index 0 (Mean Force) from the returned arrays
         # Use clean filtering to skip any NaN layers caused by depth/buffer mismatches
@@ -244,7 +270,7 @@ if __name__ == '__main__':
     print("\nSimulation Finished!")
     print(f"Total layer data points collected: {len(master_scope_means)}")
     print(f"Overall Monte Carlo Mean R²: {np.mean(r2s):.4f} (±{np.std(r2s):.4f})")
-    print(f"Overall Monte Carlo Mean Slope: {np.mean(slopes):.4f}")
+    print(f"Overall Monte Carlo Mean Slope: {np.mean(slopes):.4f} (±{np.std(r2s):.4f}")
 
     # 3. Create the plots
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
@@ -253,6 +279,10 @@ if __name__ == '__main__':
     # Since 1000 iterations will produce thousands of overlapping points,
     # using a low alpha (transparency) helps visualize data density.
     ax[0].scatter(master_smp_means, master_scope_means, alpha=0.5, color='teal', marker='x')
+
+    # plot trend line calculated over all values at once
+    ax[0].plot(np.arange(np.min(x), np.max(x), 1), np.arange(np.min(x), np.max(x), 1) * slope_mean + int_mean,
+               color='black', label=f'Line from all data, (R^2={r2_mean:.4f})')
 
     # Plot an average trendline over the scatter plot
     x_vals = np.array([0, np.max(master_smp_means)])
@@ -267,7 +297,7 @@ if __name__ == '__main__':
     ax[0].legend()
 
     # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
-    ax[1].hist(slopes, bins=5, color='royalblue', edgecolor='black', alpha=0.7)
+    ax[1].hist(r2s, bins=25, color='royalblue', edgecolor='black', alpha=0.7)
     ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
                   label=f'Mean R² = {np.mean(r2s):.3f}')
     ax[1].set_title('Distribution of Alignment $R^2$ Scores')
