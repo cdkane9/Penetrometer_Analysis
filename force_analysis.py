@@ -5,6 +5,7 @@ from scipy import stats
 import random
 import ast
 from profile_matching import *
+from scipy.optimize import curve_fit
 
 '''
 Outline:
@@ -19,7 +20,7 @@ Outline:
 
 pit_path = '/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
 
-caca = pd.read_csv('all_profiles2.csv')
+caca = pd.read_csv('all_profiles_thinned.csv')
 
 # values in these two columns were constructed as lists
 # Read in as strings, re-convert back to list
@@ -108,6 +109,8 @@ def scope_smp_comp(df:pd.DataFrame):
         smp_paths = df['smp_paths'].iloc[i]
         scope_paths = df['scope_paths'].iloc[i]
 
+
+
         # read in stratigraphy file
         pit_id = df['id'].iloc[i] + '_strat.csv'
         pit = pd.read_csv(os.path.join(pit_path, pit_id))
@@ -120,7 +123,10 @@ def scope_smp_comp(df:pd.DataFrame):
 
         # chose random profile from each
         smp_path = random.choice(smp_paths)
+        smp_id = os.path.basename(smp_path)
+
         scope_path = random.choice(scope_paths)
+        scope_id = os.path.basename(scope_path)
 
         # pass smp and scope paths to profile_matching wrapper function
         smp, match_scope, _, og_scope, _ = wrapper(
@@ -129,22 +135,36 @@ def scope_smp_comp(df:pd.DataFrame):
             distance_cosine
         )
 
-        for idx in range(len(pit)):
+        print(f'Matching Scope {scope_id} to SMP {smp_id}\n')
+
+        for idx in range(len(pit) - 1):
             # set top and bottom of layer
             t_val = top.iloc[idx]
-            b_val = bot.iloc[idx]
+            b_val = bot.iloc[idx + 1]
 
             # calculate hardness across layer
             smp_mean, smp_max, smp_min = get_hardness('smp', smp, t_val, b_val, hs)
             scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
 
+            # catch instances where stratigraphy is deeper than smp or scope
+            if (np.isnan(smp_mean) or np.isnan(scope_mean) or
+                    np.isnan(smp_max) or np.isnan(scope_max) or
+                    np.isnan(smp_min) or np.isnan(scope_min)):
+                continue
+
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
 
+
+
     # convert to array for calculating regression
     all_scope_vals = np.array(all_scope_vals)
     all_smp_vals = np.array(all_smp_vals)
+
+    if len(all_smp_vals) < 2:
+        arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
+        return all_scope_vals, all_smp_vals, arr_nan, arr_nan, arr_nan
 
     # calculate correlation statistics
     res_of_mean = stats.linregress(all_smp_vals[:, 0], all_scope_vals[:, 0])
@@ -163,11 +183,101 @@ def scope_smp_comp(df:pd.DataFrame):
 
 
 if __name__ == '__main__':
-    layer_scope, layer_smp, metrics, _, _ = scope_smp_comp(get_pen_paths('scope_smp'))
+    num_iters = 25
 
-    scope_means = layer_scope[:, 0]
-    smp_means = layer_smp[:, 0]
+    r2s = np.zeros(num_iters)
+    slopes = np.zeros(num_iters)
+    intercepts = np.zeros(num_iters)
 
-    plt.scatter(scope_means, smp_means)
+    master_scope_means = []
+    master_smp_means = []
+
+    pen_df = get_pen_paths('scope_smp')
+
+    for iter_idx in range(num_iters):
+        print('############################################')
+        print(f'Iteration: {iter_idx + 1}')
+        print('############################################')
+        # scope_smp_comp randomly pairs profiles and performs the linear regression
+        scope_vals, smp_vals, arr_of_mean, _, _ = scope_smp_comp(pen_df)
+
+        # Store iteration-specific tracking metrics (Slope, Intercept, R^2)
+        slopes[iter_idx] = arr_of_mean[0]
+        intercepts[iter_idx] = arr_of_mean[1]
+        r2s[iter_idx] = arr_of_mean[2]
+
+        # Extract the column index 0 (Mean Force) from the returned arrays
+        # Use clean filtering to skip any NaN layers caused by depth/buffer mismatches
+        valid_mask = ~np.isnan(scope_vals[:, 0]) & ~np.isnan(smp_vals[:, 0])
+
+        # Extend the master list with the valid layers found in this specific iteration
+        master_scope_means.extend(scope_vals[valid_mask, 0])
+        master_smp_means.extend(smp_vals[valid_mask, 0])
+
+        if (iter_idx + 1) % 100 == 0:
+            print(
+                f"  Iteration {iter_idx + 1}/{num_iters} complete. Current mean R²: {np.mean(r2s[:iter_idx + 1]):.4f}")
+
+        # Convert master lists into numpy arrays for plotting
+    master_scope_means = np.array(master_scope_means)
+    master_smp_means = np.array(master_smp_means)
+
+    x = master_smp_means
+    y = master_scope_means
+
+    def target_func(x, m, b):
+        return m * x + b
+
+    popt, _ = curve_fit(target_func, x, y)
+    slope_mean = popt[0]
+    int_mean = popt[1]
+
+    # Calculate uncentered R^2 manually
+    residuals = y - target_func(x, slope_mean, int_mean)
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum(y ** 2)
+    r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+
+    print(f'ALL R2: {r2_mean:.4f}')
+    print(f'SLOPE: {slope_mean:.4f}')
+
+    print("\nSimulation Finished!")
+    print(f"Total layer data points collected: {len(master_scope_means)}")
+    print(f"Overall Monte Carlo Mean R²: {np.mean(r2s):.4f} (±{np.std(r2s):.4f})")
+    print(f"Overall Monte Carlo Mean Slope: {np.mean(slopes):.4f}")
+
+    # 3. Create the plots
+    fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left Plot: Master Scatter Plot of all data points across all iterations
+    # Since 1000 iterations will produce thousands of overlapping points,
+    # using a low alpha (transparency) helps visualize data density.
+    ax[0].scatter(master_smp_means, master_scope_means, alpha=0.5, color='teal', marker='x')
+
+    # Plot an average trendline over the scatter plot
+    x_vals = np.array([0, np.max(master_smp_means)])
+    y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
+    ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
+               label=f'Avg Line (R²={np.mean(r2s):.3f})')
+
+    ax[0].set_title('Aggregated Layer Mean Force (All Iterations)')
+    ax[0].set_xlabel('Reference SMP Mean Force (N)')
+    ax[0].set_ylabel('Matched Snow Scope Mean Force (N)')
+    ax[0].grid(True, alpha=0.3)
+    ax[0].legend()
+
+    # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
+    ax[1].hist(slopes, bins=5, color='royalblue', edgecolor='black', alpha=0.7)
+    ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
+                  label=f'Mean R² = {np.mean(r2s):.3f}')
+    ax[1].set_title('Distribution of Alignment $R^2$ Scores')
+    ax[1].set_xlabel('$R^2$ Variance')
+    ax[1].set_ylabel('Frequency Count')
+    ax[1].grid(True, alpha=0.3)
+    ax[1].legend()
+
+    plt.tight_layout()
     plt.show()
+
+
     pass
