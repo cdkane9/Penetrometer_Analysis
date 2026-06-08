@@ -170,17 +170,19 @@ def scope_smp_comp(df:pd.DataFrame):
     x = all_smp_vals[:, 0]
     y = all_scope_vals[:, 0]
 
-    def target_func(x, m, b):
-        return m * x + b
+    def mae_loss(params, x, y):
+        m, b = params
+        return np.mean(np.abs(y - (m* x + b)))
 
-    popt, _ = curve_fit(target_func, x, y)
-    slope_mean = popt[0]
-    int_mean = popt[1]
+    res = minimize(mae_loss, x0=[1, 0], args=(x, y))
+    slope_mean = res.x[0]
+    int_mean = res.x[1]
+
 
     # Calculate uncentered R^2 manually
-    residuals = y - target_func(x, slope_mean, int_mean)
+    residuals = y - (slope_mean * x + int_mean)
     ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum(y ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
     r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
 
     # calculate correlation statistics
@@ -202,7 +204,7 @@ def scope_smp_comp(df:pd.DataFrame):
 
 
 if __name__ == '__main__':
-    num_iters = 100
+    num_iters = 10
 
     r2s = np.zeros(num_iters)
     slopes = np.zeros(num_iters)
@@ -251,17 +253,18 @@ if __name__ == '__main__':
     x = master_smp_means
     y = master_scope_means
 
-    def target_func(x, m, b):
-        return m * x + b
+    def mae_loss(params, x, y):
+        m, b = params
+        return np.mean(np.abs(y - (m* x+ b)))
 
-    popt, _ = curve_fit(target_func, x, y)
-    slope_mean = popt[0]
-    int_mean = popt[1]
+    res = minimize(mae_loss, x0=[1, 0], args=(x, y))
+    slope_mean = res.x[0]
+    int_mean = res.x[1]
 
     # Calculate uncentered R^2 manually
-    residuals = y - target_func(x, slope_mean, int_mean)
+    residuals = y - (slope_mean * x + int_mean)
     ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum(y ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
     r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
 
     print(f'ALL R2: {r2_mean:.4f}')
