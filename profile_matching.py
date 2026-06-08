@@ -285,8 +285,12 @@ def wrapper(reference:str, profile:str,
 
     elif type_prof == 'smp':
         # Assumes SMP has already been converted to a .csv of raw sample data
-        prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
-        prof_raw.columns = ['depth', 'force']
+        try:
+            prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
+            prof_raw.columns = ['depth', 'force']
+        except pd.errors.ParserError:
+            prof_raw = pd.read_csv(profile, low_memory=False)
+            prof_raw.columns = ['depth', 'force']
     else:
         raise ValueError('Unkown profile type\n'
                          'Must be [scope, ram, smp]')
