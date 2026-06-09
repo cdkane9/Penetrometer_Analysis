@@ -203,6 +203,91 @@ def scope_smp_comp(df:pd.DataFrame):
     return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean#arr_of_mean, arr_of_max, arr_of_min
 
 
+def ram_smp_comp(df: pd.DataFrame):
+    '''
+    Iterate through entire dataframe of SMP and standard ram profiles, seletts
+    a random SMP profile from each pit, matches the ram profile to the SMP, compares max/min/average
+    force across stratigraphic layer, return tuple of R^2, slope, and intercept of regression line
+    :param df: DF containing paths to SMP and ram profiles
+    :return: lsit of R^2, slope and intercept of regression line
+    '''
+
+    # initialize lists for layer-wise values across pits
+    all_ram_vals = []
+    all_smp_vals = []
+
+    for i in df.index:
+        smp_paths = df['smp_paths'].iloc[i]
+        ram_path = df['ram'].iloc[i]
+        ram_id = os.path.basename(ram_path)
+
+        # read in stratigraphy file
+        pit_id = df['id'].iloc[i] + '_strat.csv'
+        pit = pd.read_csv(os.path.join(pit_path, pit_id))
+        top = pit['top_cm']
+        bot = pit['bottom_cm']
+        grain_type = pit['type']
+        size = pit['grain avg_mm']
+        hs = top.max()
+
+        # choose random SMP profile
+        smp_path = random.choice(smp_paths)
+        smp_id = os.path.basename(smp_path)
+
+        # match the ram to the smp with profile_matching.py
+        smp, match_ram, _, og_ram, score = wrapper(
+            smp_path, ram_path,
+            'smp', 'ram',
+            distance_cosine
+        )
+
+        print(f'Matched ram {ram_id} to SMP {smp_id} with score {score:.4f}')
+
+        # pull out average force for matched profiles
+        for idx in range(len(pit) - 1):
+            # set top and botom of layer
+            t_val = top.iloc[idx]
+            b_val = bot.iloc[idx + 1]
+
+            # calculate hardness across layer
+            smp_mean, smp_max, smp_min = get_hardness('smp', smp, t_val, b_val, hs)
+            ram_mean, ram_max, ram_min = get_hardness('ram', match_ram, t_val, b_val, hs)
+
+            # catch instances where stratigraphy is deeper than the smp or ram
+            if (np.isnan(smp_mean) or np.isnan(ram_mean) or
+                    np.isnan(smp_max) or np.isnan(ram_max) or
+                    np.isnan(smp_min) or np.isnan(ram_min)):
+                continue
+
+            # store values
+            all_smp_vals.append([smp_mean, smp_max, smp_min])
+            all_ram_vals.append([ram_mean, ram_max, ram_min])
+
+    # conver to an array for calculating regression
+    all_smp_vals = np.array(all_smp_vals)
+    all_ram_vals = np.array(all_ram_vals)
+
+    # set variables for regression
+    x = all_smp_vals[:, 0]
+    y = all_ram_vals[:, 0]
+
+    # calculate regression
+    def mae_loss(params, x, y):
+        m, b = params
+        return np.mean(np.abs(y - (m * x + b)))
+
+    res = minimize(mae_loss, x0=[1, 0], args=(x, y))
+    slope_mean = res.x[0]
+    int_mean = res.x[1]
+
+    # calculate uncentere r^2 manually
+    residuals = y - (slope_mean * x + int_mean)
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum((y - np.mean(y)) ** 2)
+    r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+
+    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean
+
 if __name__ == '__main__':
     num_iters = 10
 
