@@ -13,18 +13,18 @@ and matches the scope to SMP for all data collected.
 '''
 
 
-caca = pd.read_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles.csv')
-caca = caca.replace('/Users/colemankane/',
-                    '/Users/colemankane_1/', regex=True)
-#caca.to_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles2.csv')
+caca = pd.read_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles_thinned.csv')
+
 caca['scope_paths'] = caca['scope_paths'].dropna().apply(ast.literal_eval)
 caca['smp_paths'] = caca['smp_paths'].dropna().apply(ast.literal_eval)
+caca['ram'] = caca['ram'].dropna()
 
 
 caca_filt = caca[
-    (caca['scope_paths'].str.len() > 0) &
+    (caca['ram'].str.len() > 0) &
     (caca['smp_paths'].str.len()>0)
 ].reset_index()
+
 rand_pits = rand.sample(list(caca_filt.index), len(caca_filt))
 print(len(caca_filt))
 for i in rand_pits:
@@ -33,14 +33,19 @@ for i in rand_pits:
     scope_paths = caca_filt['scope_paths'].iloc[i]
     ram_path = caca_filt['ram'].iloc[i]
 
+    ram = os.path.basename(ram_path)
+    print(ram)
+
     smp_path = rand.choice(smp_paths)
-    scope_path = rand.choice(scope_paths)
+    #scope_path = rand.choice(scope_paths)
+
+    smp = os.path.basename(smp_path)
+    print(smp)
 
 
-
-    smp, match_scope, best_alphas, og_scope, score = wrapper(
-        smp_path, scope_path,
-        'smp', 'scope',
+    smp, matched_ram, best_alphas, og_ram, score = wrapper(
+        smp_path, ram_path,
+        'smp', 'ram',
         distance_cosine
     )
 
@@ -52,9 +57,9 @@ for i in rand_pits:
     fig, ax = plt.subplots(1, 3, figsize=(14, 7), sharey=True)
 
     # Subplot 1: Profile Alignment
-    ax[0].plot(og_scope['force'], og_scope['depth'], label='Original Scope', alpha=0.5, color='gray')
-    ax[0].plot(match_scope['force'], match_scope['depth'], label='Matched Scope', color='blue')
-    ax[0].plot(smp['force'], smp['depth'], label='Reference SMP', color='green', alpha=0.7)
+    ax[0].step(og_ram['force'], og_ram['depth'], label='Original Ram', alpha=0.5, color='gray')
+    ax[0].step(matched_ram['force'], matched_ram['depth'], label='Matched Ram', color='blue')
+    ax[0].plot(smp['force'] * 124, smp['depth'], label='Reference SMP', color='green', alpha=0.7)
     ax[0].set_title('Profile Matching Alignment')
     ax[0].set_xlabel('Force/Hardness')
     ax[0].set_ylabel('Depth (cm)')
@@ -72,8 +77,8 @@ for i in rand_pits:
     ax[1].grid(axis='x', alpha=0.3)
 
     # Subplot 3: Absolute Displacement Path
-    displacement = match_scope['depth'] - og_scope['depth']
-    ax[2].plot(displacement, match_scope['depth'], color='purple', linewidth=2)
+    displacement = matched_ram['depth'] - og_ram['depth']
+    ax[2].plot(displacement, matched_ram['depth'], color='purple', linewidth=2)
     ax[2].axvline(0, color='black', linestyle='--')
     ax[2].set_title('Net Physical Shift')
     ax[2].set_xlabel('Displacement (cm)')

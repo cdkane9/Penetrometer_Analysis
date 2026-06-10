@@ -27,6 +27,11 @@ caca = pd.read_csv('all_profiles_thinned.csv')
 caca['scope_paths'] = caca['scope_paths'].dropna().apply(ast.literal_eval)
 caca['smp_paths'] = caca['smp_paths'].dropna().apply(ast.literal_eval)
 
+prefixes_to_exclude = ('JPLMet_20250407_TS', 'JPLMet_20250408_TS')
+
+caca = caca[~caca['id'].str.startswith(prefixes_to_exclude, na=False)]
+
+
 # filter df based on instruments to compare
 
 
@@ -93,17 +98,20 @@ def get_hardness(type:str, pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series,
     return mean, max, min
 
 # comparison for smp and snow scope
-def scope_smp_comp(df:pd.DataFrame):
+def scope_smp_comp(df:pd.DataFrame, score_threshold:float=1):
     '''
     Iterates through entire dataframe of SMP and Scope profiles, selects
     random profile of each from each pit, matches Scope to SMP, compares max/min/average
     force across stratigraphic layers, returns tuple of R^2, slope, and intercept
     :param df: DF containing paths to SMP and Scope profiles
+    :param score_threshold: maximum allowable cosine-difference score to be included in analysis
     :return: list of R^2, slope, and intercept
     '''
     # initialize lists for layer-wise values across all pits
     all_scope_vals = []
     all_smp_vals = []
+    all_scores = []
+    removed_profiles = 0
 
     for i in df.index:
         smp_paths = df['smp_paths'].iloc[i]
@@ -129,13 +137,18 @@ def scope_smp_comp(df:pd.DataFrame):
         scope_id = os.path.basename(scope_path)
 
         # pass smp and scope paths to profile_matching wrapper function
-        smp, match_scope, _, og_scope, _ = wrapper(
+        smp, match_scope, _, og_scope, score = wrapper(
             smp_path, scope_path,
             'smp', 'scope',
             distance_cosine
         )
 
-        print(f'Matching Scope {scope_id} to SMP {smp_id}\n')
+        print(f'Matched Scope {scope_id} to SMP {smp_id}\n with score {score:.4f}')
+
+        if score_threshold is not None and score > score_threshold:
+            print(f'\nPoor cosine score: {score:.4f}\n')
+            removed_profiles += 1
+            continue
 
         for idx in range(len(pit) - 1):
             # set top and bottom of layer
@@ -155,16 +168,18 @@ def scope_smp_comp(df:pd.DataFrame):
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
+            all_scores.append(score)
 
 
 
     # convert to array for calculating regression
     all_scope_vals = np.array(all_scope_vals)
     all_smp_vals = np.array(all_smp_vals)
+    all_scores = np.array(all_scores)
 
     if len(all_smp_vals) < 2:
         arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
-        return all_scope_vals, all_smp_vals, arr_nan, arr_nan, arr_nan
+        return all_scope_vals, all_smp_vals, arr_nan, arr_nan, arr_nan, all_scores
     ############ NEW ##########
     # try other slope and r^2 calculation
     x = all_smp_vals[:, 0]
@@ -179,7 +194,7 @@ def scope_smp_comp(df:pd.DataFrame):
     int_mean = res.x[1]
 
 
-    # Calculate uncentered R^2 manually
+    # Calculate R_MAE manually
     residuals = np.abs(y - (slope_mean * x + int_mean))
     sad_res = np.sum(residuals)
     sad_tot = np.sum(np.abs(y - np.median(y)))
@@ -200,10 +215,9 @@ def scope_smp_comp(df:pd.DataFrame):
     arr_of_max = None
     arr_of_min = None
 
-    return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean#arr_of_mean, arr_of_max, arr_of_min
+    return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles#arr_of_mean, arr_of_max, arr_of_min
 
-
-def ram_smp_comp(df: pd.DataFrame):
+def ram_smp_comp(df: pd.DataFrame, score_threshold:float=0.3):
     '''
     Iterate through entire dataframe of SMP and standard ram profiles, seletts
     a random SMP profile from each pit, matches the ram profile to the SMP, compares max/min/average
@@ -215,11 +229,17 @@ def ram_smp_comp(df: pd.DataFrame):
     # initialize lists for layer-wise values across pits
     all_ram_vals = []
     all_smp_vals = []
+    all_scores = []
+    removed_profiles = 0
+    total_attempted = 0
 
     for i in df.index:
         smp_paths = df['smp_paths'].iloc[i]
         ram_path = df['ram'].iloc[i]
         ram_id = os.path.basename(ram_path)
+
+
+
 
         # read in stratigraphy file
         pit_id = df['id'].iloc[i] + '_strat.csv'
@@ -228,11 +248,12 @@ def ram_smp_comp(df: pd.DataFrame):
         bot = pit['bottom_cm']
         grain_type = pit['type']
         size = pit['grain avg_mm']
-        hs = top.max()
+        hs = top.max().astype(float)
 
         # choose random SMP profile
         smp_path = random.choice(smp_paths)
         smp_id = os.path.basename(smp_path)
+
 
         # match the ram to the smp with profile_matching.py
         smp, match_ram, _, og_ram, score = wrapper(
@@ -242,6 +263,10 @@ def ram_smp_comp(df: pd.DataFrame):
         )
 
         print(f'Matched ram {ram_id} to SMP {smp_id} with score {score:.4f}')
+        if score_threshold is not None and score > score_threshold:
+            print(f'\nSkipping match due to poor matching - score: {score:.4f}\n')
+            removed_profiles += 1
+            continue
 
         # pull out average force for matched profiles
         for idx in range(len(pit) - 1):
@@ -262,10 +287,12 @@ def ram_smp_comp(df: pd.DataFrame):
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_ram_vals.append([ram_mean, ram_max, ram_min])
+            all_scores.append(score)
 
     # conver to an array for calculating regression
     all_smp_vals = np.array(all_smp_vals)
     all_ram_vals = np.array(all_ram_vals)
+    all_scores = np.array(all_scores)
 
     # set variables for regression
     x = all_smp_vals[:, 0]
@@ -280,91 +307,114 @@ def ram_smp_comp(df: pd.DataFrame):
     slope_mean = res.x[0]
     int_mean = res.x[1]
 
-    # calculate uncentered r^2 manually
-    residuals = y - (slope_mean * x + int_mean)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((y - np.mean(y)) ** 2)
-    r2_mean = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
-
-    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean
-
-if __name__ == '__main__':
-
-    num_iters = 25
-
-    r2s = np.zeros(num_iters)
-    slopes = np.zeros(num_iters)
-    intercepts = np.zeros(num_iters)
-
-    master_scope_means = []
-    master_smp_means = []
-
-    pen_df = get_pen_paths('scope_smp')
-
-    for iter_idx in range(num_iters):
-        print('############################################')
-        print(f'Iteration: {iter_idx + 1}')
-        print('############################################')
-        # scope_smp_comp randomly pairs profiles and performs the linear regression
-        #scope_vals, smp_vals, arr_of_mean, _, _ = scope_smp_comp(pen_df)
-        scope_vals, smp_vals, slope, intercept, r2 = scope_smp_comp(pen_df)
-
-        # Store iteration-specific tracking metrics (Slope, Intercept, R^2)
-        #slopes[iter_idx] = arr_of_mean[0]
-        #intercepts[iter_idx] = arr_of_mean[1]
-        #r2s[iter_idx] = arr_of_mean[2]
-        slopes[iter_idx] = slope
-        intercepts[iter_idx] = intercept
-        r2s[iter_idx] = r2
-
-
-
-
-        # Extract the column index 0 (Mean Force) from the returned arrays
-        # Use clean filtering to skip any NaN layers caused by depth/buffer mismatches
-        valid_mask = ~np.isnan(scope_vals[:, 0]) & ~np.isnan(smp_vals[:, 0])
-
-        # Extend the master list with the valid layers found in this specific iteration
-        master_scope_means.extend(scope_vals[valid_mask, 0])
-        master_smp_means.extend(smp_vals[valid_mask, 0])
-
-        if (iter_idx + 1) % 100 == 0:
-            print(
-                f"  Iteration {iter_idx + 1}/{num_iters} complete. Current mean R²: {np.mean(r2s[:iter_idx + 1]):.4f}")
-
-        # Convert master lists into numpy arrays for plotting
-    master_scope_means = np.array(master_scope_means)
-    master_smp_means = np.array(master_smp_means)
-########################################################################################
-    x = master_smp_means
-    y = master_scope_means
-
-    def mae_loss(params, x, y):
-        m, b = params
-        return np.mean(np.abs(y - (m* x+ b)))
-
-    res = minimize(mae_loss, x0=[1, 0], args=(x, y))
-    slope_mean = res.x[0]
-    int_mean = res.x[1]
-
-    # Calculate uncentered R^2 manually
+    # Calculate R_MAE manually
     residuals = np.abs(y - (slope_mean * x + int_mean))
     sad_res = np.sum(residuals)
     sad_tot = np.sum(np.abs(y - np.median(y)))
     r2_mean = 1.0 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
 
-    print(f'ALL R2: {r2_mean:.4f}')
-    print(f'SLOPE: {slope_mean:.4f}')
+    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles
+
+def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
+    '''
+    Monte-Carlo simulation on all profiles.  For each iteration, randomly select profiles from each pit,
+    match one profile to the other, compare the hardness across stratigraphic layers, fit a regression
+    for all data in that iteration.  Return mean slope, intercept, and r^2 for entire simulation
+    :param pena: Reference profile - treat as independent variable, penetrometer with most confidence
+    :param penb: Evaluation profile - dependent variable, penetrometer that will be matched
+    :param comp: String determining which instruments to compare
+    :param num_iters: # of iterations in simulation
+    :return: mean_pena      ==> mean hardness across each stratigraphic layers for pena
+             mean_penb      ==> mean hardness across each stratigraphic layers for penb
+             slopes         ==> slopes of regression lines from each iteration
+             intercepts     ==> intercepts of regression lines from each iteration
+             r2s            ==> r^2 values of regression lines from each iteration
+    '''
+    # determines which dataframe and which comparison function to use
+    COMP_MAP = {
+        'ram_smp': ram_smp_comp,
+        'smp_ram': ram_smp_comp,
+
+        'scope_smp': scope_smp_comp,
+        'smp_scope': scope_smp_comp,
+
+        #'ram_scope': ram_scope_comp,
+        #'scope_ram': ram_scope_comp
+    }
+    if comp not in COMP_MAP:
+        raise ValueError(f"Invalid comparison string '{comp}'. Must be one of {list(COMP_MAP.keys())}")
+
+    comp_function = COMP_MAP[comp]
+    pen_df = get_pen_paths(comp)
 
 
+    # initialize array for statistics
+    r2s = np.zeros(num_iters)
+    slopes = np.zeros(num_iters)
+    intercepts = np.zeros(num_iters)
+
+    master_pena_means = []
+    master_penb_means = []
+    master_scores = []
+
+    # track how many match scores were removed
+    total_removed = 0
+    total_attempted = 0
+
+    for iter_idx in range(num_iters):
+        print('############################################')
+        print(f'Iteration: {iter_idx + 1}')
+        print('############################################')
+
+        # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
+        penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold)
 
 
+        # store metrics for each iteration
+        slopes[iter_idx] = slope
+        intercepts[iter_idx] = intercept
+        r2s[iter_idx] = r2
 
+        # add number of profiles removed
+        total_removed += removed_count
+        total_attempted += len(pena_vals)
 
-    print("\nSimulation Finished!")
-    print(f"Total layer data points collected: {len(master_scope_means)}")
-    print(f"Overall Monte Carlo Mean R²: {np.mean(r2s):.4f} (±{np.std(r2s):.4f})")
-    print(f"Overall Monte Carlo Mean Slope: {np.mean(slopes):.4f} (±{np.std(r2s):.4f}")
+        # Skip over any NaN layers, and add valid layers to master lists
+        valid_mask = ~np.isnan(penb_vals[:, 0]) & ~np.isnan(pena_vals[:, 0])
+        master_pena_means.extend(pena_vals[valid_mask])
+        master_penb_means.extend(penb_vals[valid_mask])
+        master_scores.extend(scores[valid_mask])
+
+        if (iter_idx + 1) % 10 == 0:
+            print(
+                f'Iteration {iter_idx + 1}/{num_iters} complete. Current mean R²: {np.mean(r2s[:iter_idx + 1]):.4f}")'
+            )
+
+    master_pena_means = np.array(master_pena_means)
+    master_penb_means = np.array(master_penb_means)
+    master_scores = np.array(master_scores)
+
+    # calculate percentage of profiles removed
+    pct_removed = (total_removed / total_attempted * 100) if total_attempted > 0 else 0
+    print(f'# of profiles removed: {total_removed}')
+    print(f'# of profiles attempted: {total_attempted}')
+    print(f'% of profiles removed: {pct_removed}')
+    print(f'N data points: {len(master_pena_means)}')
+    print(f'Overall Mean R2: {np.mean(r2s):.4f} (+/- {np.std(r2s):.4f})')
+    print(f'Overall Mean Slope: {np.mean(slopes):.4f} (±{np.std(slopes):.4f}')
+
+    return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed
+
+if __name__ == '__main__':
+    #master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
+    #    'smp_scope', 25, score_threshold=0.25
+    #)
+
+    master_smp_means, master_ram_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
+        'smp_ram', 25, score_threshold=0.1
+    )
+
+    print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
     # 3. Create the plots
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
@@ -372,26 +422,37 @@ if __name__ == '__main__':
     # Left Plot: Master Scatter Plot of all data points across all iterations
     # Since 1000 iterations will produce thousands of overlapping points,
     # using a low alpha (transparency) helps visualize data density.
-    ax[0].scatter(master_smp_means, master_scope_means, alpha=0.5, color='teal', marker='x')
+    sc = ax[0].scatter(
+        master_smp_means[:, 0],
+        master_ram_means[:, 0],
+        c=cos_scores,
+        cmap='viridis',
+        alpha=0.6,
+        marker='x'
+    )
+
+    cbar = fig.colorbar(sc, ax=ax[0])
+    cbar.set_label('Cosine distance score')
 
     # Plot an average trendline over the scatter plot
-    x_vals = np.array([0, np.max(master_smp_means)])
+    x_vals = np.array([0, np.max(master_smp_means[:, 0])])
     y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
     ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
                label=f'Avg Line (R²={np.mean(r2s):.3f})')
 
     ax[0].set_title('Aggregated Layer Mean Force (All Iterations)')
     ax[0].set_xlabel('Reference SMP Mean Force (N)')
-    ax[0].set_ylabel('Matched Snow Scope Mean Force (N)')
+    ax[0].set_ylabel('Matched Ram Mean Force (N)')
     ax[0].grid(True, alpha=0.3)
     ax[0].legend()
 
     # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
-    ax[1].hist(r2s, bins=25, color='royalblue', edgecolor='black', alpha=0.7)
+    ax[1].hist(r2s, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
     ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
                   label=f'Mean R² = {np.mean(r2s):.3f}')
-    ax[1].set_title('Distribution of Alignment $R^2$ Scores')
-    ax[1].set_xlabel('$R^2$ Variance')
+    #ax[1].axvline(np.median(cos_scores), color='green', label='Median Cosine Distance')
+    #ax[1].set_title('Distribution of Alignment Cosine-Distance Scores')
+    ax[1].set_xlabel(r'$r^2$ distribution')
     ax[1].set_ylabel('Frequency Count')
     ax[1].grid(True, alpha=0.3)
     ax[1].legend()

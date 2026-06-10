@@ -27,6 +27,7 @@ def scope_head(df):
 
 # pull out depth and force columns from ram profile
 def ram_head(df):
+
     df['depth'] = df['l_cm'] * 10
     df['force'] = df['rr_N']
     return df
