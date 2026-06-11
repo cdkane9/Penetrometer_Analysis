@@ -410,8 +410,8 @@ if __name__ == '__main__':
     #    'smp_scope', 25, score_threshold=0.25
     #)
 
-    master_smp_means, master_ram_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
-        'smp_ram', 25, score_threshold=0.1
+    master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
+        'smp_scope', 500, score_threshold=1
     )
 
     print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
@@ -424,7 +424,7 @@ if __name__ == '__main__':
     # using a low alpha (transparency) helps visualize data density.
     sc = ax[0].scatter(
         master_smp_means[:, 0],
-        master_ram_means[:, 0],
+        master_scope_means[:, 0],
         c=cos_scores,
         cmap='viridis',
         alpha=0.6,
@@ -440,7 +440,7 @@ if __name__ == '__main__':
     ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
                label=f'Avg Line (R²={np.mean(r2s):.3f})')
 
-    ax[0].set_title('Aggregated Layer Mean Force (All Iterations)')
+    ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
     ax[0].set_xlabel('Reference SMP Mean Force (N)')
     ax[0].set_ylabel('Matched Ram Mean Force (N)')
     ax[0].grid(True, alpha=0.3)
@@ -456,6 +456,12 @@ if __name__ == '__main__':
     ax[1].set_ylabel('Frequency Count')
     ax[1].grid(True, alpha=0.3)
     ax[1].legend()
+
+    fig1, ax1 = plt.subplots(figsize=(8, 8))
+    ax1.hist(cos_scores, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
+    ax1.set_title('Cosine Distance score distribution')
+    ax1.set_xlabel('Cosine Distance score')
+    ax1.set_ylabel('Frequency Count')
 
     plt.tight_layout()
     plt.show()
