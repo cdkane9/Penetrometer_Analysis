@@ -1,11 +1,14 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from scipy import stats
 import random
 import ast
 from profile_matching import *
 from scipy.optimize import curve_fit
+import argparse
 
 '''
 Outline:
@@ -15,7 +18,11 @@ Outline:
     min/average force across each layer.  
 '''
 
-
+OBJ_FUNCTION_MAP = {
+    'distance_cosine': distance_cosine,
+    'distance_correlation': distance_correlation,
+    'distance_mse': distance_mse
+}
 
 
 pit_path = '/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
@@ -98,7 +105,7 @@ def get_hardness(type:str, pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series,
     return mean, max, min
 
 # comparison for smp and snow scope
-def scope_smp_comp(df:pd.DataFrame, score_threshold:float=1):
+def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
     '''
     Iterates through entire dataframe of SMP and Scope profiles, selects
     random profile of each from each pit, matches Scope to SMP, compares max/min/average
@@ -140,7 +147,7 @@ def scope_smp_comp(df:pd.DataFrame, score_threshold:float=1):
         smp, match_scope, _, og_scope, score = wrapper(
             smp_path, scope_path,
             'smp', 'scope',
-            distance_cosine
+            obj_func
         )
 
         print(f'Matched Scope {scope_id} to SMP {smp_id}\n with score {score:.4f}')
@@ -217,7 +224,7 @@ def scope_smp_comp(df:pd.DataFrame, score_threshold:float=1):
 
     return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles#arr_of_mean, arr_of_max, arr_of_min
 
-def ram_smp_comp(df: pd.DataFrame, score_threshold:float=0.3):
+def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
     '''
     Iterate through entire dataframe of SMP and standard ram profiles, seletts
     a random SMP profile from each pit, matches the ram profile to the SMP, compares max/min/average
@@ -259,7 +266,7 @@ def ram_smp_comp(df: pd.DataFrame, score_threshold:float=0.3):
         smp, match_ram, _, og_ram, score = wrapper(
             smp_path, ram_path,
             'smp', 'ram',
-            distance_cosine
+            obj_func
         )
 
         print(f'Matched ram {ram_id} to SMP {smp_id} with score {score:.4f}')
@@ -315,7 +322,7 @@ def ram_smp_comp(df: pd.DataFrame, score_threshold:float=0.3):
 
     return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles
 
-def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
+def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
     '''
     Monte-Carlo simulation on all profiles.  For each iteration, randomly select profiles from each pit,
     match one profile to the other, compare the hardness across stratigraphic layers, fit a regression
@@ -324,12 +331,15 @@ def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
     :param penb: Evaluation profile - dependent variable, penetrometer that will be matched
     :param comp: String determining which instruments to compare
     :param num_iters: # of iterations in simulation
+    :param obj_func: which function to use for profile matching
     :return: mean_pena      ==> mean hardness across each stratigraphic layers for pena
              mean_penb      ==> mean hardness across each stratigraphic layers for penb
              slopes         ==> slopes of regression lines from each iteration
              intercepts     ==> intercepts of regression lines from each iteration
              r2s            ==> r^2 values of regression lines from each iteration
     '''
+
+    rolling_r2 = np.zeros(num_iters)
     # determines which dataframe and which comparison function to use
     COMP_MAP = {
         'ram_smp': ram_smp_comp,
@@ -367,7 +377,7 @@ def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
         print('############################################')
 
         # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
-        penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold)
+        penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
 
 
         # store metrics for each iteration
@@ -389,6 +399,7 @@ def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
             print(
                 f'Iteration {iter_idx + 1}/{num_iters} complete. Current mean R²: {np.mean(r2s[:iter_idx + 1]):.4f}")'
             )
+        rolling_r2[iter_idx] = np.mean(r2s[:iter_idx + 1])
 
     master_pena_means = np.array(master_pena_means)
     master_penb_means = np.array(master_penb_means)
@@ -403,15 +414,53 @@ def MC_pen_comp(comp:str, num_iters:int, score_threshold:float=1):
     print(f'Overall Mean R2: {np.mean(r2s):.4f} (+/- {np.std(r2s):.4f})')
     print(f'Overall Mean Slope: {np.mean(slopes):.4f} (±{np.std(slopes):.4f}')
 
-    return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed
+    return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed, rolling_r2
 
 if __name__ == '__main__':
     #master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
     #    'smp_scope', 25, score_threshold=0.25
     #)
 
-    master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
-        'smp_scope', 500, score_threshold=1
+    parser = argparse.ArgumentParser(
+        description='MC simulation comparing penetrometer force'
+    )
+
+    parser.add_argument(
+        '--comp',
+        type=str,
+        choices=['ram_smp', 'smp_ram', 'scope_smp', 'smp_scope'],
+        help='Instrument types to compare'
+    )
+
+    parser.add_argument(
+        '--score_threshold',
+        type=float,
+        default=100,
+        help='Set threshold of matching algorithm to include profiles'
+    )
+
+    parser.add_argument(
+        '--num_iters',
+        type=int,
+        help='Number of iterations'
+    )
+
+    parser.add_argument(
+        '--obj_func',
+        type=str,
+        choices=list(OBJ_FUNCTION_MAP.keys())
+    )
+
+    args = parser.parse_args()
+
+    selected_obj_func = OBJ_FUNCTION_MAP[args.obj_func]
+
+
+    master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct, rolling_r2 = MC_pen_comp(
+        args.comp,
+        num_iters=args.num_iters,
+        score_threshold=args.score_threshold,
+        obj_func=selected_obj_func
     )
 
     print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
@@ -457,14 +506,28 @@ if __name__ == '__main__':
     ax[1].grid(True, alpha=0.3)
     ax[1].legend()
 
+    plt.tight_layout()
+    fig.savefig(f'scatter_r2_dist_{args.comp}.png')
+    plt.close(fig)
+
     fig1, ax1 = plt.subplots(figsize=(8, 8))
     ax1.hist(cos_scores, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
-    ax1.set_title('Cosine Distance score distribution')
-    ax1.set_xlabel('Cosine Distance score')
+    ax1.set_title('Matching obj. func. score distribution')
+    ax1.set_xlabel('Score')
     ax1.set_ylabel('Frequency Count')
+    plt.tight_layout()
+    fig1.savefig(f'obj_func_distribution_{args.comp}.png')
+    plt.close(fig1)
+
+    fig2, ax2 = plt.subplots(figsize=(8, 8))
+    ax2.plot(np.arange(len(rolling_r2)), rolling_r2)
+    ax2.set_title('R^2 Values vs. Iterations')
+    ax2.set_xlabel('Iterations')
+    ax2.set_ylabel('R^2')
 
     plt.tight_layout()
-    plt.show()
+    fig2.savefig(f'rolling_r2_{args.comp}.png')
+    plt.close(fig2)
 
 
     pass
