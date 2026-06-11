@@ -25,7 +25,7 @@ OBJ_FUNCTION_MAP = {
 }
 
 
-pit_path = '/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
+pit_path = './crrel_exports'
 
 caca = pd.read_csv('all_profiles_thinned.csv')
 
@@ -449,6 +449,12 @@ if __name__ == '__main__':
         '--obj_func',
         type=str,
         choices=list(OBJ_FUNCTION_MAP.keys())
+    )
+
+    parser.add_argument(
+        '--pit_path',
+        type=str,
+        default='/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
     )
 
     args = parser.parse_args()
