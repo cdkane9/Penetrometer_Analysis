@@ -513,7 +513,7 @@ if __name__ == '__main__':
     ax[1].legend()
 
     plt.tight_layout()
-    fig.savefig(f'scatter_r2_dist_{args.comp}.png')
+    fig.savefig(f'figures/scatter_r2_dist_{args.comp}.png')
     plt.close(fig)
 
     fig1, ax1 = plt.subplots(figsize=(8, 8))
@@ -522,7 +522,7 @@ if __name__ == '__main__':
     ax1.set_xlabel('Score')
     ax1.set_ylabel('Frequency Count')
     plt.tight_layout()
-    fig1.savefig(f'obj_func_distribution_{args.comp}.png')
+    fig1.savefig(f'figures/obj_func_distribution_{args.comp}.png')
     plt.close(fig1)
 
     fig2, ax2 = plt.subplots(figsize=(8, 8))
@@ -532,7 +532,7 @@ if __name__ == '__main__':
     ax2.set_ylabel('R^2')
 
     plt.tight_layout()
-    fig2.savefig(f'rolling_r2_{args.comp}.png')
+    fig2.savefig(f'figures/rolling_r2_{args.comp}.png')
     plt.close(fig2)
 
 
