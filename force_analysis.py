@@ -25,7 +25,7 @@ OBJ_FUNCTION_MAP = {
 }
 
 
-pit_path = './crrel_exports'
+pit_path = '/bsuhome/colemankane/Documents/crrel_exports'
 
 caca = pd.read_csv('all_profiles_thinned.csv')
 
