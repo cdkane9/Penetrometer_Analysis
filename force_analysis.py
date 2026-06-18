@@ -491,6 +491,7 @@ if __name__ == '__main__':
     )
 
     if selected_obj_func != ram_smp_comp:
+        print('wrong branch')
         print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
 
