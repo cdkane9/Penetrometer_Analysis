@@ -474,7 +474,7 @@ if __name__ == '__main__':
     selected_obj_func = OBJ_FUNCTION_MAP[args.obj_func]
 
 
-    master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct, rolling_r2 = MC_pen_comp(
+    master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, nfg_pct, rolling_r2 = MC_pen_comp(
         args.comp,
         num_iters=args.num_iters,
         score_threshold=args.score_threshold,
@@ -483,6 +483,7 @@ if __name__ == '__main__':
 
     print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
+
     # 3. Create the plots
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -490,8 +491,8 @@ if __name__ == '__main__':
     # Since 1000 iterations will produce thousands of overlapping points,
     # using a low alpha (transparency) helps visualize data density.
     sc = ax[0].scatter(
-        master_smp_means[:, 0],
-        master_scope_means[:, 0],
+        master_pena_means[:, 0],
+        master_penb_means[:, 0],
         c=cos_scores,
         cmap='viridis',
         alpha=0.6,
@@ -502,7 +503,7 @@ if __name__ == '__main__':
     cbar.set_label('Cosine distance score')
 
     # Plot an average trendline over the scatter plot
-    x_vals = np.array([0, np.max(master_smp_means[:, 0])])
+    x_vals = np.array([0, np.max(master_pena_means[:, 0])])
     y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
     ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
                label=f'Avg Line (R²={np.mean(r2s):.3f})')
