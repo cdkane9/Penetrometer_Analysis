@@ -490,7 +490,7 @@ if __name__ == '__main__':
         obj_func=selected_obj_func
     )
 
-    if selected_obj_func != 'ram_smp':
+    if selected_obj_func != ram_smp_comp:
         print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
 
