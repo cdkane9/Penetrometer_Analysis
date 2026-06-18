@@ -490,72 +490,124 @@ if __name__ == '__main__':
         obj_func=selected_obj_func
     )
 
-    print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
+    if selected_obj_func != 'ram_smp':
+        print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
 
-    # 3. Create the plots
-    fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+        # 3. Create the plots
+        fig, ax = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Left Plot: Master Scatter Plot of all data points across all iterations
-    # Since 1000 iterations will produce thousands of overlapping points,
-    # using a low alpha (transparency) helps visualize data density.
-    sc = ax[0].scatter(
-        master_pena_means[:, 0],
-        master_penb_means[:, 0],
-        c=cos_scores,
-        cmap='viridis',
-        alpha=0.6,
-        marker='x'
-    )
+        # Left Plot: Master Scatter Plot of all data points across all iterations
+        # Since 1000 iterations will produce thousands of overlapping points,
+        # using a low alpha (transparency) helps visualize data density.
+        sc = ax[0].scatter(
+            master_pena_means[:, 0],
+            master_penb_means[:, 0],
+            c=cos_scores,
+            cmap='viridis',
+            alpha=0.6,
+            marker='x'
+        )
 
-    cbar = fig.colorbar(sc, ax=ax[0])
-    cbar.set_label('Cosine distance score')
+        cbar = fig.colorbar(sc, ax=ax[0])
+        cbar.set_label('Cosine distance score')
 
-    # Plot an average trendline over the scatter plot
-    x_vals = np.array([0, np.max(master_pena_means[:, 0])])
-    y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
-    ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
-               label=f'Avg Line (R²={np.mean(r2s):.3f})')
+        # Plot an average trendline over the scatter plot
+        x_vals = np.array([0, np.max(master_pena_means[:, 0])])
+        y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
+        ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
+                   label=f'Avg Line (R²={np.mean(r2s):.3f})')
 
-    ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
-    ax[0].set_xlabel('Reference SMP Mean Force (N)')
-    ax[0].set_ylabel('Matched Ram Mean Force (N)')
-    ax[0].grid(True, alpha=0.3)
-    ax[0].legend()
+        ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
+        ax[0].set_xlabel('Reference Pen_a Mean Force (N)')
+        ax[0].set_ylabel('Matched Snow Scope Mean Force (N)')
+        ax[0].grid(True, alpha=0.3)
+        ax[0].legend()
 
-    # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
-    ax[1].hist(r2s, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
-    ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
-                  label=f'Mean R² = {np.mean(r2s):.3f}')
-    #ax[1].axvline(np.median(cos_scores), color='green', label='Median Cosine Distance')
-    #ax[1].set_title('Distribution of Alignment Cosine-Distance Scores')
-    ax[1].set_xlabel(r'$r^2$ distribution')
-    ax[1].set_ylabel('Frequency Count')
-    ax[1].grid(True, alpha=0.3)
-    ax[1].legend()
+        # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
+        ax[1].hist(r2s, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
+        ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
+                      label=f'Mean R² = {np.mean(r2s):.3f}')
+        #ax[1].axvline(np.median(cos_scores), color='green', label='Median Cosine Distance')
+        #ax[1].set_title('Distribution of Alignment Cosine-Distance Scores')
+        ax[1].set_xlabel(r'$r^2$ distribution')
+        ax[1].set_ylabel('Frequency Count')
+        ax[1].grid(True, alpha=0.3)
+        ax[1].legend()
 
-    plt.tight_layout()
-    fig.savefig(f'figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
-    plt.close(fig)
+        plt.tight_layout()
+        fig.savefig(f'figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
+        plt.close(fig)
 
-    fig1, ax1 = plt.subplots(figsize=(8, 8))
-    ax1.hist(cos_scores, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
-    ax1.set_title('Matching obj. func. score distribution')
-    ax1.set_xlabel('Score')
-    ax1.set_ylabel('Frequency Count')
-    plt.tight_layout()
-    fig1.savefig(f'figures/obj_func_distribution_{args.comp}_{args.obj_func}.png')
-    plt.close(fig1)
+        fig1, ax1 = plt.subplots(figsize=(8, 8))
+        ax1.hist(cos_scores, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
+        ax1.set_title('Matching obj. func. score distribution')
+        ax1.set_xlabel('Score')
+        ax1.set_ylabel('Frequency Count')
+        plt.tight_layout()
+        fig1.savefig(f'figures/obj_func_distribution_{args.comp}_{args.obj_func}.png')
+        plt.close(fig1)
 
-    fig2, ax2 = plt.subplots(figsize=(8, 8))
-    ax2.plot(np.arange(len(rolling_r2)), rolling_r2)
-    ax2.set_title('R^2 Values vs. Iterations')
-    ax2.set_xlabel('Iterations')
-    ax2.set_ylabel('R^2')
+        fig2, ax2 = plt.subplots(figsize=(8, 8))
+        ax2.plot(np.arange(len(rolling_r2)), rolling_r2)
+        ax2.set_title('R^2 Values vs. Iterations')
+        ax2.set_xlabel('Iterations')
+        ax2.set_ylabel('R^2')
 
-    plt.tight_layout()
-    fig2.savefig(f'figures/rolling_r2_{args.comp}_{args.obj_func}.png')
-    plt.close(fig2)
+        plt.tight_layout()
+        fig2.savefig(f'figures/rolling_r2_{args.comp}_{args.obj_func}.png')
+        plt.close(fig2)
+
+    else:
+        # 3. Create the plots
+        fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+
+        # Left Plot: Master Scatter Plot of all data points across all iterations
+        # Since 1000 iterations will produce thousands of overlapping points,
+        # using a low alpha (transparency) helps visualize data density.
+        sc = ax[0].scatter(
+            master_pena_means[:, 0],
+            master_penb_means[:, 0],
+            alpha=0.6,
+            marker='x'
+        )
+
+        # Plot an average trendline over the scatter plot
+        x_vals = np.array([0, np.max(master_pena_means[:, 0])])
+        y_vals = np.mean(slopes) * x_vals + np.mean(intercepts)
+        ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
+                   label=f'Avg Line (R²={np.mean(r2s):.3f})')
+
+        ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
+        ax[0].set_xlabel('Reference SMP Mean Force (N)')
+        ax[0].set_ylabel('Matched Ram Mean Force (N)')
+        ax[0].grid(True, alpha=0.3)
+        ax[0].legend()
+
+        # Right Plot: Histogram showing the distribution of R^2 across your simulation runs
+        ax[1].hist(r2s, bins=40, color='royalblue', edgecolor='black', alpha=0.7)
+        ax[1].axvline(np.mean(r2s), color='crimson', linestyle='--', linewidth=2,
+                      label=f'Mean R² = {np.mean(r2s):.3f}')
+        # ax[1].axvline(np.median(cos_scores), color='green', label='Median Cosine Distance')
+        # ax[1].set_title('Distribution of Alignment Cosine-Distance Scores')
+        ax[1].set_xlabel(r'$r^2$ distribution')
+        ax[1].set_ylabel('Frequency Count')
+        ax[1].grid(True, alpha=0.3)
+        ax[1].legend()
+
+        plt.tight_layout()
+        fig.savefig(f'figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
+        plt.close(fig)
+
+        fig2, ax2 = plt.subplots(figsize=(8, 8))
+        ax2.plot(np.arange(len(rolling_r2)), rolling_r2)
+        ax2.set_title('R^2 Values vs. Iterations')
+        ax2.set_xlabel('Iterations')
+        ax2.set_ylabel('R^2')
+
+        plt.tight_layout()
+        fig2.savefig(f'figures/rolling_r2_{args.comp}_{args.obj_func}.png')
+        plt.close(fig2)
 
 
     pass
