@@ -490,7 +490,7 @@ if __name__ == '__main__':
         obj_func=selected_obj_func
     )
 
-    if args.obj_func not in ['ram_smp', 'smp_ram']:
+    if args.obj_func == 'smp_scope':
         print('wrong branch')
         print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
