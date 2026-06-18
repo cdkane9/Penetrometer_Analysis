@@ -21,13 +21,21 @@ Outline:
 OBJ_FUNCTION_MAP = {
     'distance_cosine': distance_cosine,
     'distance_correlation': distance_correlation,
-    'distance_mse': distance_mse
+    'distance_mse': distance_mse,
+    'None': None
 }
+
+
+# pull out depth and force columns from ram profile
+def ram_head(df):
+    df['depth'] = df['l_cm'] * 10
+    df['force'] = df['rr_N']
+    return df
 
 
 pit_path = '/bsuhome/colemankane/Documents/crrel_exports'
 
-caca = pd.read_csv('all_profiles_thinned.csv')
+caca = pd.read_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_profiles_thinned.csv')
 
 # values in these two columns were constructed as lists
 # Read in as strings, re-convert back to list
@@ -224,7 +232,7 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
 
     return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles#arr_of_mean, arr_of_max, arr_of_min
 
-def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
+def ram_smp_comp(df: pd.DataFrame):
     '''
     Iterate through entire dataframe of SMP and standard ram profiles, seletts
     a random SMP profile from each pit, matches the ram profile to the SMP, compares max/min/average
@@ -244,8 +252,7 @@ def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
         smp_paths = df['smp_paths'].iloc[i]
         ram_path = df['ram'].iloc[i]
         ram_id = os.path.basename(ram_path)
-
-
+        ram_prof = ram_head(pd.read_csv(ram_path))
 
 
         # read in stratigraphy file
@@ -260,20 +267,15 @@ def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
         # choose random SMP profile
         smp_path = random.choice(smp_paths)
         smp_id = os.path.basename(smp_path)
+        smp_prof = pd.read_csv(smp_path)
 
 
         # match the ram to the smp with profile_matching.py
-        smp, match_ram, _, og_ram, score = wrapper(
-            smp_path, ram_path,
-            'smp', 'ram',
-            obj_func
-        )
-
-        print(f'Matched ram {ram_id} to SMP {smp_id} with score {score:.4f}')
-        if score_threshold is not None and score > score_threshold:
-            print(f'\nSkipping match due to poor matching - score: {score:.4f}\n')
-            removed_profiles += 1
-            continue
+        #smp, match_ram, _, og_ram, score = wrapper(
+        #    smp_path, ram_path,
+        #    'smp', 'ram',
+        #    obj_func
+        #)
 
         # pull out average force for matched profiles
         for idx in range(len(pit) - 1):
@@ -282,8 +284,8 @@ def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
             b_val = bot.iloc[idx + 1]
 
             # calculate hardness across layer
-            smp_mean, smp_max, smp_min = get_hardness('smp', smp, t_val, b_val, hs)
-            ram_mean, ram_max, ram_min = get_hardness('ram', match_ram, t_val, b_val, hs)
+            smp_mean, smp_max, smp_min = get_hardness('smp', smp_prof, t_val, b_val, hs)
+            ram_mean, ram_max, ram_min = get_hardness('ram', ram_prof, t_val, b_val, hs)
 
             # catch instances where stratigraphy is deeper than the smp or ram
             if (np.isnan(smp_mean) or np.isnan(ram_mean) or
@@ -294,12 +296,12 @@ def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_ram_vals.append([ram_mean, ram_max, ram_min])
-            all_scores.append(score)
+            #all_scores.append(score)
 
     # conver to an array for calculating regression
     all_smp_vals = np.array(all_smp_vals)
     all_ram_vals = np.array(all_ram_vals)
-    all_scores = np.array(all_scores)
+    #all_scores = np.array(all_scores)
 
     # set variables for regression
     x = all_smp_vals[:, 0]
@@ -320,7 +322,7 @@ def ram_smp_comp(df: pd.DataFrame, obj_func, score_threshold:float=0.3):
     sad_tot = np.sum(np.abs(y - np.median(y)))
     r2_mean = 1.0 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
 
-    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles
+    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean#, all_scores, removed_profiles
 
 def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
     '''
@@ -376,24 +378,30 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
         print(f'Iteration: {iter_idx + 1}')
         print('############################################')
 
-        # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
-        penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
+        if comp_function == scope_smp_comp:
 
+            # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
+            penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
+
+        elif comp_function == ram_smp_comp:
+            penb_vals, pena_vals, slope, intercept, r2 = comp_function(pen_df)
 
         # store metrics for each iteration
         slopes[iter_idx] = slope
         intercepts[iter_idx] = intercept
         r2s[iter_idx] = r2
 
-        # add number of profiles removed
-        total_removed += removed_count
-        total_attempted += len(pena_vals)
-
         # Skip over any NaN layers, and add valid layers to master lists
         valid_mask = ~np.isnan(penb_vals[:, 0]) & ~np.isnan(pena_vals[:, 0])
         master_pena_means.extend(pena_vals[valid_mask])
         master_penb_means.extend(penb_vals[valid_mask])
-        master_scores.extend(scores[valid_mask])
+
+        if comp_function == scope_smp_comp:
+            master_scores.extend(scores[valid_mask])
+
+            # add number of profiles removed
+            total_removed += removed_count
+            total_attempted += len(pena_vals)
 
         if (iter_idx + 1) % 10 == 0:
             print(
@@ -414,7 +422,11 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
     print(f'Overall Mean R2: {np.mean(r2s):.4f} (+/- {np.std(r2s):.4f})')
     print(f'Overall Mean Slope: {np.mean(slopes):.4f} (±{np.std(slopes):.4f}')
 
-    return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed, rolling_r2
+    if comp_function == scope_smp_comp:
+        return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed, rolling_r2
+
+    elif comp_function == ram_smp_comp:
+        return master_pena_means, master_penb_means, slopes, intercepts, r2s, None, None, rolling_r2
 
 if __name__ == '__main__':
     #master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
