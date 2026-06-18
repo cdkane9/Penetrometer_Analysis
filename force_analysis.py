@@ -32,6 +32,15 @@ def ram_head(df):
     df['force'] = df['rr_N']
     return df
 
+def smp_head(path_in):
+    try:
+        prof_raw = pd.read_csv(path_in, low_memory=False, skiprows=0, usecols=[1, 2])
+        prof_raw.columns = ['depth', 'force']
+    except pd.errors.ParserError:
+        prof_raw = pd.read_csv(path_in, low_memory=False)
+        prof_raw.columns = ['depth', 'force']
+    return prof_raw
+
 
 pit_path = '/bsuhome/colemankane/Documents/crrel_exports'
 
@@ -267,7 +276,7 @@ def ram_smp_comp(df: pd.DataFrame):
         # choose random SMP profile
         smp_path = random.choice(smp_paths)
         smp_id = os.path.basename(smp_path)
-        smp_prof = pd.read_csv(smp_path)
+        smp_prof = smp_head(smp_path)
 
 
         # match the ram to the smp with profile_matching.py
@@ -466,7 +475,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--pit_path',
         type=str,
-        default='/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
+        default='/bsuhome/colemankane/Documents/crrel_exports'
     )
 
     args = parser.parse_args()
