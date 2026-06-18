@@ -388,7 +388,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
         print('############################################')
 
         if comp_function == scope_smp_comp:
-
+            print('wrong')
             # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
             penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
 
@@ -490,7 +490,7 @@ if __name__ == '__main__':
         obj_func=selected_obj_func
     )
 
-    if selected_obj_func != ram_smp_comp:
+    if args.obj_func not in ['ram_smp', 'smp_ram']:
         print('wrong branch')
         print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
 
