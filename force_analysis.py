@@ -101,9 +101,9 @@ def get_hardness(type:str, pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series,
     delta = top - bottom
     
     t_depth = ((hs - top) + (0.1 * delta)) * 10
-    print(f'top {t_depth}')
+    #print(f'top {t_depth}')
     b_depth = ((hs - bottom) - (0.1 * delta)) * 10
-    print(f'bot {b_depth}')
+    #print(f'bot {b_depth}')
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
@@ -180,6 +180,8 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
             # calculate hardness across layer
             smp_mean, smp_max, smp_min = get_hardness('smp', smp, t_val, b_val, hs)
             scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
+            
+            
 
             # catch instances where stratigraphy is deeper than smp or scope
             if (np.isnan(smp_mean) or np.isnan(scope_mean) or
@@ -367,7 +369,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         grain_type = pit['type']
         size = pit['grain avg_mm']
         hs = top.max()
-        print(f'HS: {hs}')
+        #print(f'HS: {hs}')
 
         
 
@@ -382,9 +384,15 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             obj_func
         )
         
+        
+        
         if ram is None:
             print(f'Skipping ram {df['id'].iloc[i]}')
             continue
+        
+        ram['depth'] *= 10
+        match_scope['depth'] *= 10
+        og_scope['depth'] *= 10
 
         print(f'Matched Scope {scope_id} to ram {ram_id}')
 
@@ -400,8 +408,8 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             ram_mean, ram_max, ram_min = get_hardness('ram', ram, t_val, b_val, hs)
             scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
             
-            print(f'mean_ram: {ram_mean}')
-            print(f'mean_scope: {scope_mean}')
+            #print(f'mean_ram: {ram_mean}')
+            #print(f'mean_scope: {scope_mean}')
             #print(f'max_ram: {ram_max}')
             #print(f'max_scope: {scope_max}')
             #print(f'min_ram: {ram_min}')
@@ -416,14 +424,16 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             all_ram_vals.append([ram_mean, ram_max, ram_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
             all_scores.append(score)
+            print(score)
+            
 
     # convert to array for calculating regressoin
     all_ram_vals = np.array(all_ram_vals)
     all_scope_vals = np.array(all_scope_vals)
     all_scores = np.array(all_scores)
-
-    if len(all_ram_vals) < 2:
-        return np.empty((0,3)), np.empty((0,3)), np.nan, np.nan, np.nan, np.array([]), 0
+    print(all_scores)
+    #if len(all_ram_vals) < 2:
+    #    return np.empty((0,3)), np.empty((0,3)), np.nan, np.nan, np.nan, np.array([]), 0
 
     x = all_ram_vals[:, 0]
     y = all_scope_vals[:, 0]
@@ -508,6 +518,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
             
         elif comp_function == ram_scope_comp:
             penb_vals, pena_vals, slope, intercept, r2, scores, _ = comp_function(pen_df, obj_func=obj_func)
+            print(scores)
 
         # store metrics for each iteration
         slopes[iter_idx] = slope
@@ -535,12 +546,13 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     master_pena_means = np.array(master_pena_means)
     master_penb_means = np.array(master_penb_means)
     master_scores = np.array(master_scores)
+    print(master_scores)
 
     # calculate percentage of profiles removed
-    pct_removed = (total_removed / total_attempted * 100) if total_attempted > 0 else 0
-    print(f'# of profiles removed: {total_removed}')
-    print(f'# of profiles attempted: {total_attempted}')
-    print(f'% of profiles removed: {pct_removed}')
+    #pct_removed = (total_removed / total_attempted * 100) if total_attempted > 0 else 0
+    #print(f'# of profiles removed: {total_removed}')
+    #print(f'# of profiles attempted: {total_attempted}')
+    #print(f'% of profiles removed: {pct_removed}')
     print(f'N data points: {len(master_pena_means)}')
     print(f'Overall Mean R2: {np.mean(r2s):.4f} (+/- {np.std(r2s):.4f})')
     print(f'Overall Mean Slope: {np.mean(slopes):.4f} (±{np.std(slopes):.4f}')
@@ -605,23 +617,20 @@ if __name__ == '__main__':
             Iterations: {args.num_iters}''')
 
 
-    master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, nfg_pct, rolling_r2 = MC_pen_comp(
+    master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, _, rolling_r2 = MC_pen_comp(
         args.comp,
         num_iters=args.num_iters,
         score_threshold=args.score_threshold,
         obj_func=selected_obj_func
     )
     
-    print(f'Pen a: {master_pena_means}')
-    print()
-    print(f'Pen b: {master_penb_means}')
-    print()
-    print(f'Slopes: {slopes}')
+    
 
     if args.comp != 'ram_smp':
-        print('wrong branch')
-        print(f'Median cosine distance score: {np.nanmedian(cos_scores):.4f}')
-
+        #print(f'Median objective-function distance score: {np.nanmedian(cos_scores):.4f}')
+        print()
+        #print(args.comp)
+        print(f'scores: {cos_scores}')
 
         # 3. Create the plots
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
@@ -633,13 +642,13 @@ if __name__ == '__main__':
             master_pena_means[:, 0],
             master_penb_means[:, 0],
             c=cos_scores,
-            cmap='viridis',
+            #cmap='viridis',
             alpha=0.6,
             marker='x'
         )
 
-        cbar = fig.colorbar(sc, ax=ax[0])
-        cbar.set_label('Cosine distance score')
+        #cbar = fig.colorbar(sc, ax=ax[0])
+        #cbar.set_label('Cosine distance score')
 
         # Plot an average trendline over the scatter plot
         x_vals = np.array([0, np.max(master_pena_means[:, 0])])
