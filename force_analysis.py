@@ -152,6 +152,9 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
         size = pit['grain avg_mm']
         hs = top.max()
 
+        if grain_type in ['MFcr', 'IF', 'IFil']:
+            continue
+
 
         # chose random profile from each
         smp_path = random.choice(smp_paths)
@@ -174,10 +177,10 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
             removed_profiles += 1
             continue
 
-        for idx in range(len(pit) - 1):
+        for idx in range(len(pit)):
             # set top and bottom of layer
             t_val = top.iloc[idx]
-            b_val = bot.iloc[idx + 1]
+            b_val = bot.iloc[idx]
 
             # calculate hardness across layer
             smp_mean, smp_max, smp_min = get_hardness('smp', smp, t_val, b_val, hs)
@@ -221,7 +224,7 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
     # Calculate R_MAE manually
     residuals = np.abs(y - (slope_mean * x + int_mean))
     sad_res = np.sum(residuals)
-    sad_tot = np.sum(np.abs(y - np.median(y)))
+    sad_tot = np.sum(np.abs(y - np.mean(y)))
     r2_mean = 1.0 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
 
     # calculate correlation statistics
@@ -273,6 +276,9 @@ def ram_smp_comp(df: pd.DataFrame):
         size = pit['grain avg_mm']
         hs = top.max().astype(float)
 
+        if grain_type in ['MFcr', 'IF', 'IFil']:
+            continue
+
         # choose random SMP profile
         smp_path = random.choice(smp_paths)
         smp_id = os.path.basename(smp_path)
@@ -287,10 +293,10 @@ def ram_smp_comp(df: pd.DataFrame):
         #)
 
         # pull out average force for matched profiles
-        for idx in range(len(pit) - 1):
+        for idx in range(len(pit)):
             # set top and botom of layer
             t_val = top.iloc[idx]
-            b_val = bot.iloc[idx + 1]
+            b_val = bot.iloc[idx]
 
             # calculate hardness across layer
             smp_mean, smp_max, smp_min = get_hardness('smp', smp_prof, t_val, b_val, hs)
@@ -333,7 +339,94 @@ def ram_smp_comp(df: pd.DataFrame):
 
     return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean#, all_scores, removed_profiles
 
-def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
+def ram_scope_comp(df: pd.DataFrame, obj_func: str):
+    '''
+    Iterates trhough entire dataframe of coincident ram and snow scope profiles, selects
+    a random snow scope from each pit, matches the snow scope to the ram, compares average
+    force across stratigraphic layers, and returns a tuple of r^2, slope, and intercept
+    :param df: DF containing paths to snow scope profiles
+    :param obj_func: String determining which objective function to use
+    :return: lsit of R^2, slope and intercept of regression line
+    '''
+
+    # initialize lists for layer-wise values across all pits
+    all_ram_vals = []
+    all_scope_vals = []
+    all_scores = []
+
+    for i in df.index:
+        ram_path = df['ram'].iloc[i]
+        ram_id = os.path.basename(ram_path)
+        scope_paths = df['scope_paths'].iloc[i]
+
+        # read in stratigraphy file
+        pit_id = df['id'].iloc[i] + '_strat.csv'
+        pit = pd.read_csv(os.path.join(pit_path, pit_id))
+        top = pit['top_cm']
+        bot = pit['bottom_cm']
+        grain_type = pit['type']
+        size = pit['grain avg_mm']
+        hs = top.max()
+
+        if grain_type in ['MFcr', 'IF', 'IFil']:
+            continue
+
+        # choose random snow scope profile
+        scope_path = random.choice(scope_paths)
+        scope_id = os.path.basename(scope_path)
+
+        # pass scope and ram to profile_matching wrapper function
+        ram, match_scope, _, og_scope, score = wrapper(
+            ram_path, scope_path,
+            'ram', 'scope',
+            obj_func
+        )
+
+        print(f'Matched Scope {scope_id} to ram {ram_id}')
+
+        for idx in range(len(pit)):
+            # set top and bottom of layer
+            t_val = top.iloc[idx]
+            b_val = bot.iloc[idx]
+
+            # calculate hardness across layer
+            ram_mean, ram_max, ram_min = get_hardness('ram', ram_path, t_val, b_val, hs)
+            scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
+
+            all_ram_vals.append([ram_mean, ram_max, ram_min])
+            all_scope_vals.append([scope_mean, scope_max, scope_min])
+            all_scores.append([ram_mean, ram_max, ram_min])
+
+    # convert to array for calculating regressoin
+    all_ram_vals = np.array(all_ram_vals)
+    all_scope_vals = np.array(all_scope_vals)
+    all_scores = np.array(all_scores)
+
+    if len(all_ram_vals) < 2:
+        arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
+        return all_ram_vals, all_scope_vals, arr_nan, arr_nan, arr_nan, all_scores
+
+    x = all_ram_vals[:, 0]
+    y = all_scope_vals[:, 0]
+
+    def mae_loss(params, x, y):
+        m, b = params
+        return np.mean(np.abs(y - (m * x + b)))
+
+    res = minimize(mae_loss, x0=[1, 0], args=(x, y))
+    slope_mean = res.x[0]
+    int_mean = res.x[1]
+
+    # calculate R_MAE manually
+    residuals = np.abs(y - (slope_mean * x + int_mean))
+    sad_res = np.sum(residuals)
+    sad_tot = np.sum(np.abs(y - np.median(y)))
+    r2_mean = 1 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
+
+    return all_scope_vals, all_ram_vals, slope_mean, int_mean, r2_mean, all_scores, np.nan
+
+
+def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     '''
     Monte-Carlo simulation on all profiles.  For each iteration, randomly select profiles from each pit,
     match one profile to the other, compare the hardness across stratigraphic layers, fit a regression
@@ -359,8 +452,8 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
         'scope_smp': scope_smp_comp,
         'smp_scope': scope_smp_comp,
 
-        #'ram_scope': ram_scope_comp,
-        #'scope_ram': ram_scope_comp
+        'ram_scope': ram_scope_comp,
+        'scope_ram': ram_scope_comp
     }
     if comp not in COMP_MAP:
         raise ValueError(f"Invalid comparison string '{comp}'. Must be one of {list(COMP_MAP.keys())}")
@@ -388,7 +481,6 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=1):
         print('############################################')
 
         if comp_function == scope_smp_comp:
-            print('wrong')
             # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
             penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
 
@@ -469,6 +561,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--obj_func',
         type=str,
+        default='distance_mae',
         choices=list(OBJ_FUNCTION_MAP.keys())
     )
 
