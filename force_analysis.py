@@ -481,6 +481,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     selected_obj_func = OBJ_FUNCTION_MAP[args.obj_func]
+    
+    print(f'''Penetrometers: {args.comp}
+            Objective function: {args.obj_func}
+            Iterations: {args.num_iters}''')
 
 
     master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, nfg_pct, rolling_r2 = MC_pen_comp(
@@ -537,7 +541,7 @@ if __name__ == '__main__':
         ax[1].legend()
 
         plt.tight_layout()
-        fig.savefig(f'figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
+        fig.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
         plt.close(fig)
 
         fig1, ax1 = plt.subplots(figsize=(8, 8))
@@ -546,7 +550,7 @@ if __name__ == '__main__':
         ax1.set_xlabel('Score')
         ax1.set_ylabel('Frequency Count')
         plt.tight_layout()
-        fig1.savefig(f'figures/obj_func_distribution_{args.comp}_{args.obj_func}.png')
+        fig1.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures//obj_func_distribution_{args.comp}_{args.obj_func}.png')
         plt.close(fig1)
 
         fig2, ax2 = plt.subplots(figsize=(8, 8))
@@ -556,7 +560,7 @@ if __name__ == '__main__':
         ax2.set_ylabel('R^2')
 
         plt.tight_layout()
-        fig2.savefig(f'figures/rolling_r2_{args.comp}_{args.obj_func}.png')
+        fig2.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures/rolling_r2_{args.comp}_{args.obj_func}.png')
         plt.close(fig2)
 
     else:
@@ -597,7 +601,7 @@ if __name__ == '__main__':
         ax[1].legend()
 
         plt.tight_layout()
-        fig.savefig(f'figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
+        fig.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures/scatter_r2_dist_{args.comp}_{args.obj_func}.png')
         plt.close(fig)
 
         fig2, ax2 = plt.subplots(figsize=(8, 8))
@@ -607,7 +611,7 @@ if __name__ == '__main__':
         ax2.set_ylabel('R^2')
 
         plt.tight_layout()
-        fig2.savefig(f'figures/rolling_r2_{args.comp}_{args.obj_func}.png')
+        fig2.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures/rolling_r2_{args.comp}_{args.obj_func}.png')
         plt.close(fig2)
 
 
