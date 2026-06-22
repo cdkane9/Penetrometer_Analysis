@@ -263,56 +263,63 @@ def wrapper(reference:str, profile:str,
              match_prof  ==>  stretched/thinned profile
     '''
     # TODO: capabilities intraset variability, option for passing multiple profiles?
-
-    # read in each file based on the type
-    if type_ref == 'scope':
-        ref_raw = scope_head(pd.read_csv(reference, skiprows=1, usecols=[0, 1]))
-    elif type_ref == 'ram':
-        ref_raw = ram_head(pd.read_csv(reference))
-    elif type_ref == 'smp':
-        # Assumes SMP has already been converted to a .csv of raw sample data
-        ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
-        ref_raw.columns = ['depth', 'force']
-
-    else:
-        raise ValueError('Unknown reference profile type\n'
-                         'Must be [scope, ram, smp]')
-
-    if type_prof == 'scope':
-        prof_raw = scope_head(pd.read_csv(profile, skiprows=1, usecols=[0, 1]))
-
-    elif type_prof == 'ram':
-        prof_raw = ram_head(pd.read_csv(profile))
-
-    elif type_prof == 'smp':
-        # Assumes SMP has already been converted to a .csv of raw sample data
-        try:
-            prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
-            prof_raw.columns = ['depth', 'force']
-        except pd.errors.ParserError:
-            prof_raw = pd.read_csv(profile, low_memory=False)
-            prof_raw.columns = ['depth', 'force']
-    else:
-        raise ValueError('Unkown profile type\n'
-                         'Must be [scope, ram, smp]')
-
-    # ensure profiles are same depth by trimming off excess from deeper profile
-    ref, prof = same_depth(ref_raw, prof_raw)
-
-    # smooth profiles w/ gaussian filter kernel (std. dev. = delta_h)
-    ref_resamp = resample(ref, delta_h)
-
-    prof_resamp = resample(prof.copy(), delta_h)
-
-    # Do the profile matching
-    match_prof, ref_prof, best_alphas, score = minimize_cost(prof_resamp, ref_resamp,
-                                                      optimizing_function,
-                                                      delta_L=delta_L,
-                                                      lower_bound=lower_bound,
-                                                      upper_bound=upper_bound)
-
-
-    return ref_prof, match_prof, best_alphas, prof_resamp, score
+    print(f'Reference: {reference}')
+    print(f'Prof: {profile}')
+    
+    try:
+        # read in each file based on the type
+        if type_ref == 'scope':
+            ref_raw = scope_head(pd.read_csv(reference, skiprows=1, usecols=[0, 1]))
+        elif type_ref == 'ram':
+            ref_raw = ram_head(pd.read_csv(reference))
+        elif type_ref == 'smp':
+            # Assumes SMP has already been converted to a .csv of raw sample data
+            ref_raw =  pd.read_csv(reference, low_memory=False, skiprows=0, usecols=[1, 2])
+            ref_raw.columns = ['depth', 'force']
+        
+        else:
+            raise ValueError('Unknown reference profile type\n'
+                             'Must be [scope, ram, smp]')
+        
+        if type_prof == 'scope':
+            prof_raw = scope_head(pd.read_csv(profile, skiprows=1, usecols=[0, 1]))
+        
+        elif type_prof == 'ram':
+            prof_raw = ram_head(pd.read_csv(profile))
+        
+        elif type_prof == 'smp':
+            # Assumes SMP has already been converted to a .csv of raw sample data
+            try:
+                prof_raw = pd.read_csv(profile, low_memory=False, skiprows=0, usecols=[1,2])
+                prof_raw.columns = ['depth', 'force']
+            except pd.errors.ParserError:
+                prof_raw = pd.read_csv(profile, low_memory=False)
+                prof_raw.columns = ['depth', 'force']
+        else:
+            raise ValueError('Unkown profile type\n'
+                             'Must be [scope, ram, smp]')
+        
+        # ensure profiles are same depth by trimming off excess from deeper profile
+        ref, prof = same_depth(ref_raw, prof_raw)
+        
+        # smooth profiles w/ gaussian filter kernel (std. dev. = delta_h)
+        ref_resamp = resample(ref, delta_h)
+        
+        prof_resamp = resample(prof.copy(), delta_h)
+        
+        # Do the profile matching
+        match_prof, ref_prof, best_alphas, score = minimize_cost(prof_resamp, ref_resamp,
+                                                          optimizing_function,
+                                                          delta_L=delta_L,
+                                                          lower_bound=lower_bound,
+                                                          upper_bound=upper_bound)
+        
+        
+        return ref_prof, match_prof, best_alphas, prof_resamp, score
+    
+    except IndexError:
+        print('Warning: profile alignment failed due to insufficient data')
+        return None, None, None, None, None
 
 
 ######################################################################################################
