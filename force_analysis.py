@@ -95,23 +95,15 @@ def get_hardness(type:str, pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series,
     :param hs: HS as measured from pitwall [cm]
     :return:
     '''
+    
+    
 
     delta = top - bottom
-
-    if type in ['smp', 'scope']:
-        # convert top and bottom (cm above ground) to mm below surface
-        # add in buffer of 20% of layer thickness
-        t_depth = ((hs - top) + (0.1 * delta)) * 10
-        b_depth = ((hs - bottom) - (0.1 * delta)) * 10
-
-    elif type == 'ram':
-        # convert top and bottom (cm above ground) to cm below surface
-        # add in buffer of 20% of layer thickness
-        t_depth = ((hs - top) + (0.1 * delta))
-        b_depth = ((hs - bottom) - (0.1 * delta))
-
-    else:
-        raise ValueError('Invalid type')
+    
+    t_depth = ((hs - top) + (0.1 * delta)) * 10
+    print(f'top {t_depth}')
+    b_depth = ((hs - bottom) - (0.1 * delta)) * 10
+    print(f'bot {b_depth}')
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
@@ -375,6 +367,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         grain_type = pit['type']
         size = pit['grain avg_mm']
         hs = top.max()
+        print(f'HS: {hs}')
 
         
 
@@ -382,10 +375,6 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         scope_path = random.choice(scope_paths)
         scope_id = os.path.basename(scope_path)
         
-        #if len(ram_prof) < 2 or len(scope_prof) < 2:
-        #    print(f"Skipping pit {df['id'].iloc[i]} due to empty or non-overlapping profile lengths.")
-        #    continue
-
         # pass scope and ram to profile_matching wrapper function
         ram, match_scope, _, og_scope, score = wrapper(
             ram_path, scope_path,
@@ -408,12 +397,25 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             b_val = bot.iloc[idx]
 
             # calculate hardness across layer
-            ram_mean, ram_max, ram_min = get_hardness('ram', ram_prof, t_val, b_val, hs)
+            ram_mean, ram_max, ram_min = get_hardness('ram', ram, t_val, b_val, hs)
             scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
+            
+            print(f'mean_ram: {ram_mean}')
+            print(f'mean_scope: {scope_mean}')
+            #print(f'max_ram: {ram_max}')
+            #print(f'max_scope: {scope_max}')
+            #print(f'min_ram: {ram_min}')
+            #print(f'min_scope: {scope_min}')
+            
+            if (np.isnan(ram_mean) or np.isnan(scope_mean) or
+                    np.isnan(ram_max) or np.isnan(scope_max) or
+                    np.isnan(ram_min) or np.isnan(scope_min)):
+                
+                continue
 
             all_ram_vals.append([ram_mean, ram_max, ram_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
-            all_scores.append([ram_mean, ram_max, ram_min])
+            all_scores.append(score)
 
     # convert to array for calculating regressoin
     all_ram_vals = np.array(all_ram_vals)
@@ -421,8 +423,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     all_scores = np.array(all_scores)
 
     if len(all_ram_vals) < 2:
-        arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
-        return all_ram_vals, all_scope_vals, arr_nan, arr_nan, arr_nan, all_scores
+        return np.empty((0,3)), np.empty((0,3)), np.nan, np.nan, np.nan, np.array([]), 0
 
     x = all_ram_vals[:, 0]
     y = all_scope_vals[:, 0]
@@ -610,6 +611,12 @@ if __name__ == '__main__':
         score_threshold=args.score_threshold,
         obj_func=selected_obj_func
     )
+    
+    print(f'Pen a: {master_pena_means}')
+    print()
+    print(f'Pen b: {master_penb_means}')
+    print()
+    print(f'Slopes: {slopes}')
 
     if args.comp != 'ram_smp':
         print('wrong branch')
