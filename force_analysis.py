@@ -40,6 +40,8 @@ def smp_head(path_in):
         prof_raw = pd.read_csv(path_in, low_memory=False)
         prof_raw.columns = ['depth', 'force']
     return prof_raw
+    
+
 
 
 pit_path = '/bsuhome/colemankane/Documents/crrel_exports'
@@ -113,6 +115,7 @@ def get_hardness(type:str, pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series,
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
+                            
     if layer_ix.empty: return np.nan, np.nan, np.nan
     else:
         mean = np.nanmean(pen_df.loc[layer_ix, 'force'])
@@ -152,9 +155,6 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
         size = pit['grain avg_mm']
         hs = top.max()
 
-        if grain_type in ['MFcr', 'IF', 'IFil']:
-            continue
-
 
         # chose random profile from each
         smp_path = random.choice(smp_paths)
@@ -178,6 +178,9 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
             continue
 
         for idx in range(len(pit)):
+            if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
+                continue
+        
             # set top and bottom of layer
             t_val = top.iloc[idx]
             b_val = bot.iloc[idx]
@@ -276,8 +279,7 @@ def ram_smp_comp(df: pd.DataFrame):
         size = pit['grain avg_mm']
         hs = top.max().astype(float)
 
-        if grain_type in ['MFcr', 'IF', 'IFil']:
-            continue
+        
 
         # choose random SMP profile
         smp_path = random.choice(smp_paths)
@@ -294,6 +296,9 @@ def ram_smp_comp(df: pd.DataFrame):
 
         # pull out average force for matched profiles
         for idx in range(len(pit)):
+            if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
+                continue
+            
             # set top and botom of layer
             t_val = top.iloc[idx]
             b_val = bot.iloc[idx]
@@ -357,7 +362,10 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     for i in df.index:
         ram_path = df['ram'].iloc[i]
         ram_id = os.path.basename(ram_path)
+        ram_prof = ram_head(pd.read_csv(ram_path))
+        
         scope_paths = df['scope_paths'].iloc[i]
+        
 
         # read in stratigraphy file
         pit_id = df['id'].iloc[i] + '_strat.csv'
@@ -368,12 +376,15 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         size = pit['grain avg_mm']
         hs = top.max()
 
-        if grain_type in ['MFcr', 'IF', 'IFil']:
-            continue
+        
 
         # choose random snow scope profile
         scope_path = random.choice(scope_paths)
         scope_id = os.path.basename(scope_path)
+        
+        #if len(ram_prof) < 2 or len(scope_prof) < 2:
+        #    print(f"Skipping pit {df['id'].iloc[i]} due to empty or non-overlapping profile lengths.")
+        #    continue
 
         # pass scope and ram to profile_matching wrapper function
         ram, match_scope, _, og_scope, score = wrapper(
@@ -381,16 +392,23 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             'ram', 'scope',
             obj_func
         )
+        
+        if ram is None:
+            print(f'Skipping ram {df['id'].iloc[i]}')
+            continue
 
         print(f'Matched Scope {scope_id} to ram {ram_id}')
 
         for idx in range(len(pit)):
+            if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
+                continue
+        
             # set top and bottom of layer
             t_val = top.iloc[idx]
             b_val = bot.iloc[idx]
 
             # calculate hardness across layer
-            ram_mean, ram_max, ram_min = get_hardness('ram', ram_path, t_val, b_val, hs)
+            ram_mean, ram_max, ram_min = get_hardness('ram', ram_prof, t_val, b_val, hs)
             scope_mean, scope_max, scope_min = get_hardness('scope', match_scope, t_val, b_val, hs)
 
             all_ram_vals.append([ram_mean, ram_max, ram_min])
@@ -486,6 +504,9 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
 
         elif comp_function == ram_smp_comp:
             penb_vals, pena_vals, slope, intercept, r2 = comp_function(pen_df)
+            
+        elif comp_function == ram_scope_comp:
+            penb_vals, pena_vals, slope, intercept, r2, scores, _ = comp_function(pen_df, obj_func=obj_func)
 
         # store metrics for each iteration
         slopes[iter_idx] = slope
@@ -528,6 +549,9 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
 
     elif comp_function == ram_smp_comp:
         return master_pena_means, master_penb_means, slopes, intercepts, r2s, None, None, rolling_r2
+    
+    elif comp_function == ram_scope_comp:
+        return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, None, rolling_r2
 
 if __name__ == '__main__':
     #master_smp_means, master_scope_means, slopes, intercepts, r2s, cos_scores, nfg_pct = MC_pen_comp(
@@ -541,7 +565,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--comp',
         type=str,
-        choices=['ram_smp', 'smp_ram', 'scope_smp', 'smp_scope'],
+        choices=['ram_smp', 'smp_ram', 'scope_smp', 'smp_scope', 'ram_scope', 'scope_ram'],
         help='Instrument types to compare'
     )
 
@@ -561,7 +585,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--obj_func',
         type=str,
-        default='distance_mae',
+        default='distance_mse',
         choices=list(OBJ_FUNCTION_MAP.keys())
     )
 
