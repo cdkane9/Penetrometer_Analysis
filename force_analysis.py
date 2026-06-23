@@ -536,6 +536,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
             # add number of profiles removed
             total_removed += removed_count
             total_attempted += len(pena_vals)
+            pct_removed = total_removed / total_attempted
 
         if (iter_idx + 1) % 10 == 0:
             print(
