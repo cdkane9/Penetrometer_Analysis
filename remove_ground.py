@@ -13,8 +13,8 @@ def read_scope(file_path):
 
     return scope_raw
 
-all_profs = pd.read_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles_thinned.csv')
-base_dir = '/Users/colemankane_1/Library/CloudStorage/GoogleDrive-ColemanKane@boisestate.edu/Shared drives/2024-2025 CRREL Snow Strength/Data/Scrubbed pit_strength_transect data/crrel_exports'
+all_profs = pd.read_csv('all_profiles_thinned.csv')
+base_dir = '/bsuhome/colemankane/Documents/crrel_exports'
 
 clean_scopes_25 = pd.read_csv('scope_cleaning_filled.csv')
 clean_scopes_24 = pd.read_csv('scope_24_cleaning_filled.csv')
@@ -46,8 +46,8 @@ def trim_bottom_5cm(file_path, type:str=None):
         date = pd.to_datetime(date_str)
         print(date)
 
-        if date < wy24_cutoff:
-            file_path = os.path.join('/Users/colemankane_1/Desktop/fraser_23_24_exports/Snow_Scopes', profile_id)
+        #if date < wy24_cutoff:
+        #    file_path = os.path.join('/Users/colemankane_1/Desktop/fraser_23_24_exports/Snow_Scopes', profile_id)
 
     if not os.path.exists(file_path):
         print(f"Warning: File not found for trimming: {file_path}")
