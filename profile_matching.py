@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize, LinearConstraint
 from scipy.spatial.distance import cosine
+from pyts.metrics import dtw
 
 
 '''
@@ -163,6 +164,52 @@ def distance_cosine(ref_hard, ref_d, prof_hard):
     # SciPy does 1 - cosine() under the hood, so minimize this function
     return cosine(ref_hard + 1e-6, prof_hard + 1e-6)
 
+def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
+    pena = ref_prof['force'].values
+    penb = prof['force'].values
+    depths = ref_prof['depth'].values
+
+    N = len(pena)
+
+    if method == 'sakoechiba':
+        window_ix = int(window_cm / 0.1)
+        dtw_options = {'window_size': window_ix}
+    elif method == 'fast':
+        dtw_options = {'radius': 4}
+    else: dtw_options = None
+
+    score, path = dtw(
+        x=pena,
+        y=penb,
+        dist='absolute',
+        method=method,
+        options=dtw_options,
+        return_path=True
+    )
+
+    ref_indices = path[0]
+    prof_indices = path[1]
+
+    warped_forces = np.zeros(N)
+    counts = np.zeros(N)
+
+    for idx_ref, idx_prof in zip(ref_indices, prof_indices):
+        warped_forces[idx_ref] += penb[idx_prof]
+        counts[idx_ref] += 1
+
+    counts[counts == 0] = 1
+    final_forces = warped_forces / counts
+
+    matched_profile = pd.DataFrame({
+        'depth': depths,
+        'force': final_forces
+    })
+
+    normalized_score = score / N
+
+    return matched_profile, ref_prof, None, normalized_score
+
+
 # STEP 4b: Optimize values of alpha to minimize distance function
 def objective_function(alphas, ref, prof, optimize_func, delta_L=4):
     '''
@@ -306,13 +353,19 @@ def wrapper(reference:str, profile:str,
         ref_resamp = resample(ref, delta_h)
         
         prof_resamp = resample(prof.copy(), delta_h)
-        
-        # Do the profile matching
-        match_prof, ref_prof, best_alphas, score = minimize_cost(prof_resamp, ref_resamp,
-                                                          optimizing_function,
-                                                          delta_L=delta_L,
-                                                          lower_bound=lower_bound,
-                                                          upper_bound=upper_bound)
+
+        if optimizing_function == 'dtw':
+            match_prof, ref_prof, best_alphas, score = cost_dtw(
+                prof_resamp, ref_resamp,
+                method='sakoechiba', window_cm=15
+            )
+        else:
+            # Do the profile matching
+            match_prof, ref_prof, best_alphas, score = minimize_cost(prof_resamp, ref_resamp,
+                                                              optimizing_function,
+                                                              delta_L=delta_L,
+                                                              lower_bound=lower_bound,
+                                                              upper_bound=upper_bound)
         
         
         return ref_prof, match_prof, best_alphas, prof_resamp, score
