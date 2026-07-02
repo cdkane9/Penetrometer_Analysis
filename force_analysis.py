@@ -22,7 +22,7 @@ OBJ_FUNCTION_MAP = {
     'distance_cosine': distance_cosine,
     'distance_correlation': distance_correlation,
     'distance_mse': distance_mse,
-    'None': None
+    'dtw': 'dtw'
 }
 
 
