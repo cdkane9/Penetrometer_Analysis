@@ -306,6 +306,9 @@ def ram_smp_comp(df: pd.DataFrame):
                     np.isnan(smp_max) or np.isnan(ram_max) or
                     np.isnan(smp_min) or np.isnan(ram_min)):
                 continue
+            
+            if smp_mean >= 8:
+                continue
 
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
@@ -424,14 +427,14 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             all_ram_vals.append([ram_mean, ram_max, ram_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
             all_scores.append(score)
-            print(score)
+            #print(score)
             
 
     # convert to array for calculating regressoin
     all_ram_vals = np.array(all_ram_vals)
     all_scope_vals = np.array(all_scope_vals)
     all_scores = np.array(all_scores)
-    print(all_scores)
+    #print(all_scores)
     #if len(all_ram_vals) < 2:
     #    return np.empty((0,3)), np.empty((0,3)), np.nan, np.nan, np.nan, np.array([]), 0
 
@@ -518,7 +521,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
             
         elif comp_function == ram_scope_comp:
             penb_vals, pena_vals, slope, intercept, r2, scores, _ = comp_function(pen_df, obj_func=obj_func)
-            print(scores)
+            
 
         # store metrics for each iteration
         slopes[iter_idx] = slope
@@ -530,9 +533,10 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
         master_pena_means.extend(pena_vals[valid_mask])
         master_penb_means.extend(penb_vals[valid_mask])
 
-        if comp_function == scope_smp_comp:
+        if comp_function in [scope_smp_comp, ram_scope_comp]:
             master_scores.extend(scores[valid_mask])
-
+        
+        if comp_function == scope_smp_comp:
             # add number of profiles removed
             total_removed += removed_count
             total_attempted += len(pena_vals)
@@ -547,7 +551,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     master_pena_means = np.array(master_pena_means)
     master_penb_means = np.array(master_penb_means)
     master_scores = np.array(master_scores)
-    print(master_scores)
+    
 
     # calculate percentage of profiles removed
     #pct_removed = (total_removed / total_attempted * 100) if total_attempted > 0 else 0
@@ -631,7 +635,7 @@ if __name__ == '__main__':
         #print(f'Median objective-function distance score: {np.nanmedian(cos_scores):.4f}')
         print()
         #print(args.comp)
-        print(f'scores: {cos_scores}')
+        #print(f'scores: {cos_scores}')
 
         # 3. Create the plots
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
@@ -642,8 +646,8 @@ if __name__ == '__main__':
         sc = ax[0].scatter(
             master_pena_means[:, 0],
             master_penb_means[:, 0],
-            c=cos_scores,
-            #cmap='viridis',
+            #c=cos_scores,
+            cmap='viridis',
             alpha=0.6,
             marker='x'
         )
