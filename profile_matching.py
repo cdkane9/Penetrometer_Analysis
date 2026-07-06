@@ -165,11 +165,18 @@ def distance_cosine(ref_hard, ref_d, prof_hard):
     return cosine(ref_hard + 1e-6, prof_hard + 1e-6)
 
 def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
-    pena = ref_prof['force'].values
-    penb = prof['force'].values
+    pena_orig = ref_prof['force'].values
+    penb_orig = prof['force'].values
     depths = ref_prof['depth'].values
 
-    N = len(pena)
+    N = len(pena_orig)
+
+    # normalize the force values
+    pena_min, pena_max = np.min(pena_orig), np.max(pena_orig)
+    penb_min, penb_max = np.min(penb_orig), np.max(penb_orig)
+
+    pena_norm = (pena_orig - pena_min) / (pena_max - pena_min + 1e-6)
+    penb_norm = (penb_orig - penb_min) / (penb_max - penb_min + 1e-6)
 
     if method == 'sakoechiba':
         window_ix = int(window_cm / 0.1)
@@ -179,8 +186,8 @@ def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
     else: dtw_options = None
 
     score, path = dtw(
-        x=pena,
-        y=penb,
+        x=pena_norm,
+        y=penb_norm,
         dist='absolute',
         method=method,
         options=dtw_options,
@@ -194,7 +201,7 @@ def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
     counts = np.zeros(N)
 
     for idx_ref, idx_prof in zip(ref_indices, prof_indices):
-        warped_forces[idx_ref] += penb[idx_prof]
+        warped_forces[idx_ref] += penb_orig[idx_prof]
         counts[idx_ref] += 1
 
     counts[counts == 0] = 1
@@ -351,13 +358,16 @@ def wrapper(reference:str, profile:str,
         
         # smooth profiles w/ gaussian filter kernel (std. dev. = delta_h)
         ref_resamp = resample(ref, delta_h)
-        
         prof_resamp = resample(prof.copy(), delta_h)
+
+        # set window size to 10 % of profile depth
+        depth = ref_resamp['depth'].iloc[-1]
+        win_sz = 0.2 * depth
 
         if optimizing_function == 'dtw':
             match_prof, ref_prof, best_alphas, score = cost_dtw(
                 prof_resamp, ref_resamp,
-                method='sakoechiba', window_cm=15
+                method='multiscale', window_cm=win_sz
             )
         else:
             # Do the profile matching
