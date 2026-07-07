@@ -130,6 +130,7 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
     all_scope_vals = []
     all_smp_vals = []
     all_scores = []
+    all_grain_types = []
     removed_profiles = 0
 
     for i in df.index:
@@ -188,11 +189,12 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
                     np.isnan(smp_max) or np.isnan(scope_max) or
                     np.isnan(smp_min) or np.isnan(scope_min)):
                 continue
-
+            
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
             all_scores.append(score)
+            all_grain_types.append(grain_type.iloc[idx])
 
 
 
@@ -200,6 +202,7 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
     all_scope_vals = np.array(all_scope_vals)
     all_smp_vals = np.array(all_smp_vals)
     all_scores = np.array(all_scores)
+    all_grain_types = np.array(all_grain_types)
 
     if len(all_smp_vals) < 2:
         arr_nan = np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
@@ -239,9 +242,9 @@ def scope_smp_comp(df:pd.DataFrame, obj_func, score_threshold:float=1):
     arr_of_max = None
     arr_of_min = None
 
-    return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles#arr_of_mean, arr_of_max, arr_of_min
+    return all_scope_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_scores, removed_profiles, all_grain_types#arr_of_mean, arr_of_max, arr_of_min
 
-def ram_smp_comp(df: pd.DataFrame):
+def ram_smp_comp(df: pd.DataFrame, obj_func):
     '''
     Iterate through entire dataframe of SMP and standard ram profiles, seletts
     a random SMP profile from each pit, matches the ram profile to the SMP, compares max/min/average
@@ -254,6 +257,7 @@ def ram_smp_comp(df: pd.DataFrame):
     all_ram_vals = []
     all_smp_vals = []
     all_scores = []
+    all_grain_types = []
     removed_profiles = 0
     total_attempted = 0
 
@@ -282,16 +286,16 @@ def ram_smp_comp(df: pd.DataFrame):
 
 
         # match the ram to the smp with profile_matching.py
-        #smp, match_ram, _, og_ram, score = wrapper(
-        #    smp_path, ram_path,
-        #    'smp', 'ram',
-        #    obj_func
-        #)
+        smp, match_ram, _, og_ram, score = wrapper(
+            smp_path, ram_path,
+            'smp', 'ram',
+            obj_func
+        )
 
         # pull out average force for matched profiles
         for idx in range(len(pit)):
-            if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
-                continue
+            #if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
+            #    continue
             
             # set top and botom of layer
             t_val = top.iloc[idx]
@@ -307,17 +311,19 @@ def ram_smp_comp(df: pd.DataFrame):
                     np.isnan(smp_min) or np.isnan(ram_min)):
                 continue
             
-            if smp_mean >= 8:
+            if smp_mean >= 100:
                 continue
 
             # store values
             all_smp_vals.append([smp_mean, smp_max, smp_min])
             all_ram_vals.append([ram_mean, ram_max, ram_min])
+            all_grain_types.append(grain_type.iloc[idx])
             #all_scores.append(score)
 
     # conver to an array for calculating regression
     all_smp_vals = np.array(all_smp_vals)
     all_ram_vals = np.array(all_ram_vals)
+    all_grain_types = np.array(all_grain_types)
     #all_scores = np.array(all_scores)
 
     # set variables for regression
@@ -339,7 +345,7 @@ def ram_smp_comp(df: pd.DataFrame):
     sad_tot = np.sum(np.abs(y - np.median(y)))
     r2_mean = 1.0 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
 
-    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean#, all_scores, removed_profiles
+    return all_ram_vals, all_smp_vals, slope_mean, int_mean, r2_mean, all_grain_types#, all_scores, removed_profiles
 
 def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     '''
@@ -390,7 +396,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         
         
         if ram is None:
-            print(f'Skipping ram {df['id'].iloc[i]}')
+            print(f'Skipping ram {df["id"].iloc[i]}')
             continue
         
         ram['depth'] *= 10
@@ -502,6 +508,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     master_pena_means = []
     master_penb_means = []
     master_scores = []
+    master_grain_types = []
 
     # track how many match scores were removed
     total_removed = 0
@@ -514,10 +521,10 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
 
         if comp_function == scope_smp_comp:
             # comp_function randomly selects two profiles from same pit, matches them, calculates linear regression
-            penb_vals, pena_vals, slope, intercept, r2, scores, removed_count = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
+            penb_vals, pena_vals, slope, intercept, r2, scores, removed_count, grain_types = comp_function(pen_df, score_threshold=score_threshold, obj_func=obj_func)
 
         elif comp_function == ram_smp_comp:
-            penb_vals, pena_vals, slope, intercept, r2 = comp_function(pen_df)
+            penb_vals, pena_vals, slope, intercept, r2, grain_types = comp_function(pen_df, obj_func=obj_func)
             
         elif comp_function == ram_scope_comp:
             penb_vals, pena_vals, slope, intercept, r2, scores, _ = comp_function(pen_df, obj_func=obj_func)
@@ -532,6 +539,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
         valid_mask = ~np.isnan(penb_vals[:, 0]) & ~np.isnan(pena_vals[:, 0])
         master_pena_means.extend(pena_vals[valid_mask])
         master_penb_means.extend(penb_vals[valid_mask])
+        master_grain_types.extend(grain_types[valid_mask])
 
         if comp_function in [scope_smp_comp, ram_scope_comp]:
             master_scores.extend(scores[valid_mask])
@@ -551,6 +559,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     master_pena_means = np.array(master_pena_means)
     master_penb_means = np.array(master_penb_means)
     master_scores = np.array(master_scores)
+    master_grain_types = np.array(master_grain_types)
     
 
     # calculate percentage of profiles removed
@@ -563,10 +572,10 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
     print(f'Overall Mean Slope: {np.mean(slopes):.4f} (±{np.std(slopes):.4f}')
 
     if comp_function == scope_smp_comp:
-        return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed, rolling_r2
+        return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, pct_removed, rolling_r2, master_grain_types
 
     elif comp_function == ram_smp_comp:
-        return master_pena_means, master_penb_means, slopes, intercepts, r2s, None, None, rolling_r2
+        return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, None, rolling_r2, master_grain_types
     
     elif comp_function == ram_scope_comp:
         return master_pena_means, master_penb_means, slopes, intercepts, r2s, master_scores, None, rolling_r2
@@ -622,7 +631,7 @@ if __name__ == '__main__':
             Iterations: {args.num_iters}''')
 
 
-    master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, _, rolling_r2 = MC_pen_comp(
+    master_pena_means, master_penb_means, slopes, intercepts, r2s, cos_scores, _, rolling_r2, master_grain_types = MC_pen_comp(
         args.comp,
         num_iters=args.num_iters,
         score_threshold=args.score_threshold,
@@ -636,6 +645,8 @@ if __name__ == '__main__':
         print()
         #print(args.comp)
         #print(f'scores: {cos_scores}')
+        
+        major_grain_types = [i[:2] for i in master_grain_types]
 
         # 3. Create the plots
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
@@ -643,14 +654,15 @@ if __name__ == '__main__':
         # Left Plot: Master Scatter Plot of all data points across all iterations
         # Since 1000 iterations will produce thousands of overlapping points,
         # using a low alpha (transparency) helps visualize data density.
-        sc = ax[0].scatter(
-            master_pena_means[:, 0],
-            master_penb_means[:, 0],
-            #c=cos_scores,
-            cmap='viridis',
-            alpha=0.6,
-            marker='x'
-        )
+        unique_grains = np.unique(major_grain_types)
+        for grain in unique_grains:
+            mask = (master_grain_types == grain)
+            ax[0].scatter(
+                master_pena_means[mask, 0],
+                master_penb_means[mask, 0],
+                alpha=0.5, 
+                label=grain
+                )
 
         #cbar = fig.colorbar(sc, ax=ax[0])
         #cbar.set_label('Cosine distance score')
@@ -661,7 +673,7 @@ if __name__ == '__main__':
         ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
                    label=f'Avg Line (R²={np.mean(r2s):.3f})')
 
-        ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
+        ax[0].set_title(f'Aggregated Layer Mean Force ({args.num_iters} Iterations)')
         ax[0].set_xlabel('Reference Pen_a Mean Force (N)')
         ax[0].set_ylabel('Matched Snow Scope Mean Force (N)')
         ax[0].grid(True, alpha=0.3)
@@ -688,7 +700,7 @@ if __name__ == '__main__':
         ax1.set_xlabel('Score')
         ax1.set_ylabel('Frequency Count')
         plt.tight_layout()
-        fig1.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures//obj_func_distribution_{args.comp}_{args.obj_func}.png')
+        fig1.savefig(f'/bsuhome/colemankane/Documents/penetrometer_analysis/figures/obj_func_distribution_{args.comp}_{args.obj_func}.png')
         plt.close(fig1)
 
         fig2, ax2 = plt.subplots(figsize=(8, 8))
@@ -702,6 +714,7 @@ if __name__ == '__main__':
         plt.close(fig2)
 
     else:
+        major_grain_types = [i[:2] for i in master_grain_types]
         # 3. Create the plots
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -721,7 +734,7 @@ if __name__ == '__main__':
         ax[0].plot(x_vals, y_vals, color='crimson', linestyle='--', linewidth=2,
                    label=f'Avg Line (R²={np.mean(r2s):.3f})')
 
-        ax[0].set_title('Aggregated Layer Mean Force (500 Iterations)')
+        ax[0].set_title(f'Aggregated Layer Mean Force ({args.num_iters} Iterations)')
         ax[0].set_xlabel('Reference SMP Mean Force (N)')
         ax[0].set_ylabel('Matched Ram Mean Force (N)')
         ax[0].grid(True, alpha=0.3)
