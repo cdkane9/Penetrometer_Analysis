@@ -361,7 +361,8 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     all_ram_vals = []
     all_scope_vals = []
     all_scores = []
-
+    all_grain_types = []
+    
     for i in df.index:
         ram_path = df['ram'].iloc[i]
         ram_id = os.path.basename(ram_path)
@@ -406,8 +407,6 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
         print(f'Matched Scope {scope_id} to ram {ram_id}')
 
         for idx in range(len(pit)):
-            if grain_type.iloc[idx] in ['MFcr', 'IF', 'IFil']:
-                continue
         
             # set top and bottom of layer
             t_val = top.iloc[idx]
@@ -433,6 +432,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
             all_ram_vals.append([ram_mean, ram_max, ram_min])
             all_scope_vals.append([scope_mean, scope_max, scope_min])
             all_scores.append(score)
+            all_grain_types.append(grain_type.iloc[idx])
             #print(score)
             
 
@@ -440,6 +440,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     all_ram_vals = np.array(all_ram_vals)
     all_scope_vals = np.array(all_scope_vals)
     all_scores = np.array(all_scores)
+    all_grain_types = np.array(all_grain_types)
     #print(all_scores)
     #if len(all_ram_vals) < 2:
     #    return np.empty((0,3)), np.empty((0,3)), np.nan, np.nan, np.nan, np.array([]), 0
@@ -461,7 +462,7 @@ def ram_scope_comp(df: pd.DataFrame, obj_func: str):
     sad_tot = np.sum(np.abs(y - np.median(y)))
     r2_mean = 1 - (sad_res / sad_tot) if sad_tot != 0 else 0.0
 
-    return all_scope_vals, all_ram_vals, slope_mean, int_mean, r2_mean, all_scores, np.nan
+    return all_scope_vals, all_ram_vals, slope_mean, int_mean, r2_mean, all_scores, np.nan, all_grain_types
 
 
 def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
@@ -527,7 +528,7 @@ def MC_pen_comp(comp:str, num_iters:int, obj_func, score_threshold:float=100):
             penb_vals, pena_vals, slope, intercept, r2, grain_types = comp_function(pen_df, obj_func=obj_func)
             
         elif comp_function == ram_scope_comp:
-            penb_vals, pena_vals, slope, intercept, r2, scores, _ = comp_function(pen_df, obj_func=obj_func)
+            penb_vals, pena_vals, slope, intercept, r2, scores, _, grain_types = comp_function(pen_df, obj_func=obj_func)
             
 
         # store metrics for each iteration
