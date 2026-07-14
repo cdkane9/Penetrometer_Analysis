@@ -52,15 +52,15 @@ def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float)
 
     delta = top - bottom
     
-    t_depth = ((hs - top) + (0.1 * delta)) * 10
+    t_depth = ((hs - top) + (0.15 * delta)) * 10
     #print(f'top {t_depth}')
-    b_depth = ((hs - bottom) - (0.1 * delta)) * 10
+    b_depth = ((hs - bottom) - (0.15 * delta)) * 10
     #print(f'bot {b_depth}')
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
                             
-    if layer_ix.empty: return np.nan, np.nan, np.nan
+    if layer_ix.empty: return np.nan
     else:
         mean = np.nanmean(pen_df.loc[layer_ix, 'force'])
 
@@ -91,18 +91,18 @@ def compile_layers():
     
     
 def get_pen_paths(profile_id, penetrometer):
-    pen_nap = {'smp': 'smp_paths', 'scope': 'scope_paths', 'ram': 'ram'}
+    pen_map = {'smp': 'smp_paths', 'scope': 'scope_paths', 'ram': 'ram'}
     column_name = pen_map[penetrometer]
     
-    match = all_profs['id'] == profile_id]
+    match = all_profs[all_profs['id'] == profile_id]
     if match.empty:
         return []
     
-    path_val = match.iloc[0][col]
-    if pd.isna(path_val) or path_val = '[]':
+    path_val = match.iloc[0][column_name]
+    if pd.isna(path_val) or path_val == '[]':
         return []
         
-    if penetrometer_type in ["smp", "scope"]:
+    if penetrometer in ["smp", "scope"]:
         try:
             return ast.literal_eval(path_val)
         except (ValueError, SyntaxError):
@@ -113,9 +113,68 @@ def get_pen_paths(profile_id, penetrometer):
         
 def layer_average_force(layers_df, penetrometer):
     
+    mean_forces_column = []
+    loaded_cache = {}
+    
+    for idx, row in layers_df.iterrows():
+        pid = row['profile_id']
+        top = row['top_cm']
+        bottom = row['bottom_cm']
+        hs = row['hs']
+        
+        paths = get_pen_paths(pid, penetrometer)
+        
+        
+        if not paths:
+            mean_forces_column.append(np.nan)
+            continue
+        
+        # to take average across all profiles made at given pit
+        file_level_averages = []
+        
+        for path in paths:
+            if path not in loaded_cache:
+                try:
+                    if penetrometer == 'smp':
+                        loaded_cache[path] = smp_head(path)
+                    elif penetrometer == 'scope':
+                        loaded_cache[path] = scope_head(pd.read_csv(path, skiprows=1, usecols=[0, 1]))
+                    elif penetrometer == 'ram':
+                        loaded_cache[path] = ram_head(pd.read_csv(path))
+                except Exception as e:
+                    print(e)
+                    loaded_cache[path] = None
+            
+            pen_df = loaded_cache[path]
+            if pen_df is None or pen_df.empty:
+                
+                continue
+            
+            # calculate hardness for given profile
+            file_mean = get_hardness(pen_df, top, bottom, hs)
+            if not pd.isna(file_mean):
+                file_level_averages.append(file_mean)
+                
+        if file_level_averages:
+            mean_forces_column.append(np.nanmean(file_level_averages))
+        else:
+            mean_forces_column.append(np.nan)
+            
+    layers_df[f'avg_force_{penetrometer}'] = mean_forces_column
+    return layers_df
+    
 
 if __name__ == '__main__':
     layers = compile_layers()
+    
+    ram_layers = layer_average_force(layers, 'ram')
+    scope_layers = layer_average_force(layers, 'scope')
+    smp_layers = layer_average_force(layers, 'smp')
+    
+    ram_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_ram_layers.csv')
+    scope_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_scope_layers.csv')
+    smp_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_smp_layers.csv')
+    
     
     
     
