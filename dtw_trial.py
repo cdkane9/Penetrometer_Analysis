@@ -101,7 +101,7 @@ def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
 
     return matched_profile, ref_prof, None, normalized_score'''
 
-def dtw(prof, ref_prof, window_cm=10, penalty=0.01, use_derivative=False):
+def dtw(prof, ref_prof, window_cm=10, penalty=0.05, use_derivative=False):
     '''
     Uses dynamic time warping to align prof and ref_prof with a locality
     window constraint
@@ -204,14 +204,14 @@ def dtw(prof, ref_prof, window_cm=10, penalty=0.01, use_derivative=False):
 
 
 
-scope_a = resample(scope_a, 4)
-scope_b = resample(scope_b, 4)
+scope_a = resample(scope_a, 5)
+scope_b = resample(scope_b, 5)
 
-smp_a = resample(smp_a, 4)
-smp_b = resample(smp_b, 4)
+smp_a = resample(smp_a, 5)
+smp_b = resample(smp_b, 5)
 
 
-scope_a, smp_b = same_depth(scope_a, smp_b)
+#scope_a, smp_b = same_depth(scope_a, smp_b)
 
 matched_scope_b, mat, path = dtw(prof=scope_a, ref_prof=smp_b)
 path = np.array(path)
@@ -230,17 +230,18 @@ plt.plot(matched_scope_b['depth'], matched_scope_b['force'], marker='o', markers
 plt.grid()
 plt.legend()
 plt.show()
+plt.grid()
 plt.figure(2)
 
 shift = path[:, 1] - path[:, 0]
 plt.plot(shift, path[:, 0])
 plt.gca().invert_yaxis()
+plt.grid()
 plt.show()
 plt.figure(3)
 
 
 
-print(path)
 
 '''
 matched_scope_a, smp_a, _, score = cost_dtw(smp_b, smp_a)

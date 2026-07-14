@@ -11,8 +11,8 @@ Outline:
 
 all_profs = pd.read_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles2.csv')
 
-clean_scopes_25 = pd.read_csv('scope_cleaning_filled.csv')
-clean_scopes_24 = pd.read_csv('scope_24_cleaning_filled.csv')
+clean_scopes_25 = pd.read_csv('/Users/colemankane_1/Documents/BSU/Crrel Snow Strength/pen_analysis/scope_cleaning_filled.csv')
+clean_scopes_24 = pd.read_csv('/Users/colemankane_1/Documents/BSU/Crrel Snow Strength/pen_analysis/scope_24_cleaning_filled.csv')
 
 
 clean_scopes = pd.concat([clean_scopes_25, clean_scopes_24])
@@ -20,8 +20,8 @@ tossed_scopes = set(clean_scopes[(clean_scopes['toss'] == 1)]['profile'])
 
 
 
-clean_smps = pd.read_csv('smp_cleaning_filled.csv')
-tossed_smps = set(clean_smps[clean_smps['toss'] == 1]['profile'])
+clean_smps = pd.read_csv('/Users/colemankane_1/Documents/BSU/Crrel Snow Strength/pen_analysis/smp_cleaning_filled.csv')
+tossed_smps = set(clean_smps[(clean_smps['toss'] == 1) | (clean_smps['overload'] == 1)]['profile'])
 
 
 
@@ -76,7 +76,7 @@ def trim_bottom_5cm(file_path, depth_column, resolution):
 
         if resolution == 'mm':
             trimmed_df[depth_column] *= 10
-        trimmed_df.to_csv(file_path, index=False)
+        #trimmed_df.to_csv(file_path, index=False)
     except:
         print(f'error {file_path}')
 
@@ -88,4 +88,4 @@ def trim_bottom_5cm(file_path, depth_column, resolution):
 
 
 
-#all_profs.to_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles_thinned.csv')
+all_profs.to_csv('/Users/colemankane_1/Documents/BSU/Penetrometer_Analysis/all_profiles_thinned.csv')
