@@ -44,6 +44,7 @@ smp_b.columns = ['depth', 'force']
 
 ram_path = os.path.join(data_path, 'BDG_20250115_sram.csv')
 ram = ram_head(pd.read_csv(ram_path))
+ram['depth'] /= 10
 
 
 
@@ -101,7 +102,7 @@ def cost_dtw(prof, ref_prof, method='sakoechiba', window_cm=15):
 
     return matched_profile, ref_prof, None, normalized_score'''
 
-def dtw(prof, ref_prof, window_cm=10, penalty=0.05, use_derivative=False):
+def dtw(prof, ref_prof, window_cm=10, penalty=0.05, use_derivative=True):
     '''
     Uses dynamic time warping to align prof and ref_prof with a locality
     window constraint
@@ -210,10 +211,13 @@ scope_b = resample(scope_b, 5)
 smp_a = resample(smp_a, 5)
 smp_b = resample(smp_b, 5)
 
+#ram = resample(ram, 1)
+ram, scope_b = same_depth(ram, scope_b)
+
 
 #scope_a, smp_b = same_depth(scope_a, smp_b)
 
-matched_scope_b, mat, path = dtw(prof=scope_a, ref_prof=smp_b)
+matched_scope, mat, path = dtw(prof=scope_b, ref_prof=ram)
 path = np.array(path)
 
 plt.matshow(mat)
@@ -224,9 +228,9 @@ plt.show()
 plt.figure(1)
 
 
-plt.plot(smp_b['depth'], smp_b['force'], marker='o', markersize=2, color='red', label='Ref SMP')
-plt.plot(scope_a['depth'], scope_a['force'], marker='x', markersize=2, color='grey', label='OG Scope')
-plt.plot(matched_scope_b['depth'], matched_scope_b['force'], marker='o', markersize=2, color='blue', label='Matched Scope')
+plt.plot(ram['depth'], ram['force'] / 200, marker='o', markersize=2, color='red', label='Ref Ram')
+plt.plot(scope_b['depth'], scope_b['force'], marker='x', markersize=2, color='grey', label='OG Scope')
+plt.plot(matched_scope['depth'], matched_scope['force'], marker='o', markersize=2, color='blue', label='Matched Scope')
 plt.grid()
 plt.legend()
 plt.show()
