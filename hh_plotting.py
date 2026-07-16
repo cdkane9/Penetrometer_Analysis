@@ -29,18 +29,20 @@ def plot_hardness(pen_dict, Penetrometer):
     df_plot = pd.DataFrame(plot_data)
 
     fig, ax = plt.subplots()
+    ax.set_yscale('symlog', linthresh=0.1)
+
 
     #sns.set_theme(style='whitegrid')
 
     order = ['F', '4F', '1F', 'P', 'K', 'I']
 
-    sns.boxplot(
+    sns.violinplot(
         data = df_plot,
         x='Hand Hardness',
         y='Penetration Resistance [N]',
         order=order,
         palette='viridis',
-        notch=True,
+        #notch=False,
         #fliersize=0,
         width=0.6
     )
@@ -110,6 +112,7 @@ if __name__ == '__main__':
     ram = group_force('all_ram_layers.csv', 'ram')
     smp = group_force('all_smp_layers.csv', 'smp')
     scope = group_force('all_scope_layers.csv', 'scope')
+
 
     plot_hardness(ram, 'Ram')
     plot_hardness(smp, 'SMP')
