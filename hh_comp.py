@@ -83,6 +83,7 @@ def compile_layers():
             strat['profile_id'] = profile_id
             all_layers.append(strat)
         except Exception as e:
+            print(e)
             continue
     
     all_layers = pd.concat(all_layers, ignore_index=True)
