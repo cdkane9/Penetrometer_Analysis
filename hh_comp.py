@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
+from profile_matching import resample, same_depth
 import os
 import argparse
 import ast
@@ -27,6 +28,72 @@ def scope_head(df):
     # convert from kPa to N
     scope_prof['force'] *= 1000 * 0.0000554
     return scope_prof
+    
+    
+    
+def set_dtw(prof, ref_prof, window_cm=10, penalty=0.05, use_derivative=False):
+    s1 = ref_prof['force'].values
+    s2 = prof['force'].values
+    depths = ref_prof['depth'].values
+
+    s1max, s1min = np.max(s1), np.min(s1)
+    s2max, s2min = np.max(s2), np.min(s2)
+    s1_norm = (s1 - s1min) / (s1max - s1min + 1e-6)
+    s2_norm = (s2 - s2min) / (s2max - s2min + 1e-6)
+
+    if use_derivative:
+        grad1 = np.gradient(s1_norm)
+        grad2 = np.gradient(s2_norm)
+        s1_input = (grad1 - np.min(grad1)) / (np.max(grad1) - np.min(grad1) + 1e-6)
+        s2_input = (grad2 - np.min(grad2)) / (np.max(grad2) - np.min(grad2) + 1e-6)
+    else:
+        s1_input = s1_norm
+        s2_input = s2_norm
+
+    N, M = len(s1_input), len(s2_input)
+    window = int(window_cm / 0.1)
+
+    cost_mat = np.full((N, M), np.inf)
+    cost_mat[0, 0] = 0
+
+    for i in range(N):
+        j_start = max(0, i - window)
+        j_end = min(M, i + window)
+        for j in range(j_start, j_end):
+            if i == 0 and j == 0:
+                continue
+            v1 = cost_mat[i - 1, j] + penalty if i > 0 else np.inf
+            v2 = cost_mat[i, j - 1] + penalty if j > 0 else np.inf
+            v3 = cost_mat[i - 1, j - 1] if (i > 0 and j > 0) else np.inf
+            cost_mat[i, j] = abs(s1_input[i] - s2_input[j]) + min(v1, v2, v3)
+
+    path = []
+    i, j = N - 1, M - 1
+    while i > 0 or j > 0:
+        path.append((i, j))
+        if i == 0:
+            j -= 1
+            continue
+        elif j == 0:
+            i -= 1
+            continue
+        choices = [cost_mat[i - 1, j], cost_mat[i, j - 1], cost_mat[i - 1, j - 1]]
+        best = np.argmin(choices)
+        if best == 0: i -= 1
+        elif best == 1: j -= 1
+        else:
+            i -= 1
+            j -= 1
+    path.append((0, 0))
+    path.reverse()
+
+    # Fixed coordinate reconstruction mapping to avoid peak attenuation
+    ref_path_indices = [p[0] for p in path]
+    prof_path_indices = [p[1] for p in path]
+    matched_prof_indices = np.interp(np.arange(N), ref_path_indices, prof_path_indices)
+    final_forces = s2[np.round(matched_prof_indices).astype(int)]
+
+    return pd.DataFrame({'depth': depths, 'force': final_forces}), cost_mat, path
 
 
 all_profs = pd.read_csv('all_profiles_thinned.csv')
@@ -111,7 +178,7 @@ def get_pen_paths(profile_id, penetrometer):
     else:
         # Single string path (ram)
         return [path_val]
-        
+'''        
 def layer_average_force(layers_df, penetrometer):
     
     mean_forces_column = []
@@ -164,6 +231,67 @@ def layer_average_force(layers_df, penetrometer):
     layers_df[f'avg_force_{penetrometer}'] = mean_forces_column
     return layers_df
     
+    
+'''   
+
+def layer_average_force(layers_df, penetrometer):
+    # Create a clean series tracking index modifications
+    output_series = pd.Series(np.nan, index=layers_df.index)
+    
+    # Group by pit ID so we process all layers in a pit together
+    for pid, group in layers_df.groupby('profile_id'):
+        paths = get_pen_paths(pid, penetrometer)
+        if not paths:
+            continue
+            
+        # 1. Load and resample all raw profiles for this pit
+        raw_profiles = []
+        for path in paths:
+            try:
+                if penetrometer == 'smp':
+                    df = smp_head(path)
+                elif penetrometer == 'scope':
+                    df = scope_head(pd.read_csv(path, skiprows=1, usecols=[0, 1]))
+                elif penetrometer == 'ram':
+                    df = ram_head(pd.read_csv(path))
+                
+                if df is not None and not df.empty:
+                    raw_profiles.append(resample(df))
+            except Exception as e:
+                print(f"Error loading {path}: {e}")
+                
+        if not raw_profiles:
+            continue
+            
+        # 2. Align all profiles in this pit to the first profile (Master Reference)
+        aligned_profiles = [raw_profiles[0]]  # Reference profile doesn't need self-warping
+        ref_prof = raw_profiles[0]
+        
+        for prof in raw_profiles[1:]:
+            try:
+                matched_prof, _, _ = set_dtw(prof, ref_prof, window_cm=10, use_derivative=True)
+                aligned_profiles.append(matched_prof)
+            except Exception as e:
+                print(f"DTW failed for a profile in pit {pid}: {e}")
+                aligned_profiles.append(prof) # Fallback to unaligned if DTW errors out
+
+        # 3. Calculate layer averages using the pre-aligned profile ensemble
+        for idx, row in group.iterrows():
+            top = row['top_cm']
+            bottom = row['bottom_cm']
+            hs = row['hs']
+            
+            file_level_averages = []
+            for pen_df in aligned_profiles:
+                file_mean = get_hardness(pen_df, top, bottom, hs)
+                if not pd.isna(file_mean):
+                    file_level_averages.append(file_mean)
+                    
+            if file_level_averages:
+                output_series.loc[idx] = np.nanmean(file_level_averages)
+                
+    layers_df[f'avg_force_{penetrometer}'] = output_series
+    return layers_df
 
 if __name__ == '__main__':
     layers = compile_layers()
