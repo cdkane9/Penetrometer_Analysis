@@ -13,11 +13,12 @@ def group_force(layer_df_path, penetrometer):
         valid['HH'].astype(str).str.replace(r'[+-]', '', regex=False)
     )
 
-    categories = ['F', '4F', '1F', 'P', 'K', 'I']
+    categories = ['F', '4F', '1F', 'P', 'K']#, 'I']
 
     grouped = valid.groupby('HH_clean')[col_name].apply(list).to_dict()
 
     hardness_dict = {cat: grouped.get(cat, []) for cat in categories}
+    print(hardness_dict)
     return hardness_dict
 
 def plot_hardness(pen_dict, Penetrometer):
@@ -29,20 +30,20 @@ def plot_hardness(pen_dict, Penetrometer):
     df_plot = pd.DataFrame(plot_data)
 
     fig, ax = plt.subplots()
-    ax.set_yscale('symlog', linthresh=0.1)
+    #ax.set_yscale('symlog', linthresh=0.1)
 
 
     #sns.set_theme(style='whitegrid')
 
-    order = ['F', '4F', '1F', 'P', 'K', 'I']
+    order = ['F', '4F', '1F', 'P', 'K']#, 'I']
 
-    sns.violinplot(
+    sns.boxplot(
         data = df_plot,
         x='Hand Hardness',
         y='Penetration Resistance [N]',
         order=order,
-        palette='viridis',
-        #notch=False,
+        #palette='viridis',
+        notch=False,
         #fliersize=0,
         width=0.6
     )
@@ -81,8 +82,8 @@ def plot_hardness(pen_dict, Penetrometer):
             "Upper Bound": round(upper, 2),
         }
 
-        #label_text = f"n={n}\nμ={mean_force:.1f}\nσ={std_force:.1f}"
-        label_text = f'n={n}\nMedian={median}\n20th={lower}\n80th={upper}'
+        label_text = f"n={n}\nμ={mean_force:.1f}\nσ={std_force:.1f}"
+        #label_text = f'n={n}\nMedian={median}\n20th={lower}\n80th={upper}'
         y_position = max_force + (y_limit_upper * 0.01)
 
         ax.text(
@@ -105,7 +106,7 @@ def plot_hardness(pen_dict, Penetrometer):
     plt.grid()
 
     plt.tight_layout()
-    plt.savefig(f'figures/hh_{Penetrometer}')
+    #plt.savefig(f'figures/hh_{Penetrometer}')
     plt.show()
 
 if __name__ == '__main__':
