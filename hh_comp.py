@@ -126,7 +126,7 @@ def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float,
         delta = top - bottom
         
         t_depth = ((hs - top) + (0.15 * delta)) * 10
-        b_depth = ((hs - bottom) - (0.15 * delta))
+        b_depth = ((hs - bottom) - (0.15 * delta)) * 10
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
@@ -254,8 +254,8 @@ def layer_average_force(layers_df, penetrometer, ms_df=None):
                         actual_depths = (t_mm, b_mm)
                 
                 elif (penetrometer in ['smp', 'scope']) & (not match.empty):
-                    t_mm = match['top_depth_cm'].iloc[0]
-                    b_mm = match['bot_depth_cm'].iloc[0]
+                    t_mm = match['top_depth_mm'].iloc[0]
+                    b_mm = match['bot_depth_mm'].iloc[0]
                     if not pd.isna(t_mm) and not pd.isna(b_mm):
                         actual_depths = (t_mm, b_mm)
                         
