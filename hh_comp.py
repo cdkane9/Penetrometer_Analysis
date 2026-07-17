@@ -352,9 +352,9 @@ if __name__ == '__main__':
     scope_layers = layer_average_force(layers, 'scope', scope_crust)
     smp_layers = layer_average_force(layers, 'smp', smp_crust)
     
-    #ram_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_ram_layers.csv')
-    #scope_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_scope_layers.csv')
-    #smp_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_smp_layers.csv')
+    ram_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_ram_layers.csv')
+    scope_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_scope_layers.csv')
+    smp_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_smp_layers.csv')
     
     
     
