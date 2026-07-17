@@ -104,7 +104,7 @@ all_profs = all_profs[~all_profs['id'].str.startswith(prefixes_to_exclude)]
 
 hh_categories = ['F', '4F', '1F', 'P', 'K', 'I']
 
-def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float):
+def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float, grain_type, penetrometer, actual_depths=None):
     '''
     Function for determining force across stratigraphic layers
     :param type: penetrometer type
@@ -115,14 +115,18 @@ def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float)
     :return:
     '''
     
+    if pen_df is None or pen_df.empty:
+        return np.nan
     
+    if actual_depths is not None:
+        t_depth, b_depth = actual_depths
+    
+    else:
 
-    delta = top - bottom
-    
-    t_depth = ((hs - top) + (0.15 * delta)) * 10
-    #print(f'top {t_depth}')
-    b_depth = ((hs - bottom) - (0.15 * delta)) * 10
-    #print(f'bot {b_depth}')
+        delta = top - bottom
+        
+        t_depth = ((hs - top) + (0.15 * delta)) * 10
+        b_depth = ((hs - bottom) - (0.15 * delta))
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
@@ -178,17 +182,31 @@ def get_pen_paths(profile_id, penetrometer):
     else:
         # Single string path (ram)
         return [path_val]
-'''        
-def layer_average_force(layers_df, penetrometer):
+
+def layer_average_force(layers_df, penetrometer, ms_df=None):
     
     mean_forces_column = []
     loaded_cache = {}
+    
+    ms_id_options = {
+        'smp': ['smp_id', 'profile_id', 'id'],
+        'scope': ['scope_id', 'profile_id', 'id'],
+        'ram': ['ram_id', 'sram_id', 'profile_id', 'id']
+    }
+    
+    id_col = None
+    if ms_df is not None:
+        for col in ms_id_options[penetrometer]:
+            if col in ms_df.columns:
+                id_col = col 
+                break
     
     for idx, row in layers_df.iterrows():
         pid = row['profile_id']
         top = row['top_cm']
         bottom = row['bottom_cm']
         hs = row['hs']
+        grain_type = row['type']
         
         paths = get_pen_paths(pid, penetrometer)
         
@@ -215,11 +233,37 @@ def layer_average_force(layers_df, penetrometer):
             
             pen_df = loaded_cache[path]
             if pen_df is None or pen_df.empty:
-                
                 continue
             
+            # use manually identified depth of crusts and lenses
+            actual_depths = None
+            if ms_df is not None and grain_type in ['MFcr', 'IF', 'IFil', np.nan] and id_col is not None:
+                bot_col = 'bot_cm' if 'bot_cm' in ms_df.columns else 'bottom_cm'
+                
+                # find the row of pen_cleaning_filled that matches id and layer boundaries
+                match = ms_df[
+                    (ms_df[id_col] == pid) &
+                    (np.isclose(ms_df['top_cm'], top, atol=0.1)) &
+                    (np.isclose(ms_df[bot_col], bottom, atol=0.1))
+                ]
+                
+                if (penetrometer == 'ram') & (not match.empty):
+                    t_mm = match['top_depth_cm'].iloc[0] * 10
+                    b_mm = match['bot_depth_cm'].iloc[0] * 10
+                    if not pd.isna(t_mm) and not pd.isna(b_mm):
+                        actual_depths = (t_mm, b_mm)
+                
+                elif (penetrometer in ['smp', 'scope']) & (not match.empty):
+                    t_mm = match['top_depth_cm'].iloc[0]
+                    b_mm = match['bot_depth_cm'].iloc[0]
+                    if not pd.isna(t_mm) and not pd.isna(b_mm):
+                        actual_depths = (t_mm, b_mm)
+                        
+                
+                    
+            
             # calculate hardness for given profile
-            file_mean = get_hardness(pen_df, top, bottom, hs)
+            file_mean = get_hardness(pen_df, top, bottom, hs, grain_type, penetrometer, actual_depths)
             if not pd.isna(file_mean):
                 file_level_averages.append(file_mean)
                 
@@ -292,13 +336,21 @@ def layer_average_force(layers_df, penetrometer):
                 
     layers_df[f'avg_force_{penetrometer}'] = output_series
     return layers_df
+'''
+
 
 if __name__ == '__main__':
     layers = compile_layers()
     
-    ram_layers = layer_average_force(layers, 'ram')
-    scope_layers = layer_average_force(layers, 'scope')
-    smp_layers = layer_average_force(layers, 'smp')
+    
+    smp_crust = pd.read_csv('smp_mastersheet_fill.csv')
+    scope_crust = pd.read_csv('scope_mastersheet_fill.csv')
+    sram_crust = pd.read_csv('sram_mastersheet_fill.csv')
+
+    
+    ram_layers = layer_average_force(layers, 'ram', sram_crust)
+    scope_layers = layer_average_force(layers, 'scope', scope_crust)
+    smp_layers = layer_average_force(layers, 'smp', smp_crust)
     
     ram_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_ram_layers.csv')
     scope_layers.to_csv('/bsuhome/colemankane/Documents/penetrometer_analysis/all_scope_layers.csv')
