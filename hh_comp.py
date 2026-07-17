@@ -233,12 +233,25 @@ def layer_average_force(layers_df, penetrometer, ms_df=None):
             if ms_df is not None and is_crust and id_col is not None:
                 bot_col = 'bot_cm' if 'bot_cm' in ms_df.columns else 'bottom_cm'
                 
+                profile_filename = os.path.basename(path)
+                prof_col = None
+                if penetrometer == 'smp' and 'smp_id' in ms_df.columns: 
+                    prof_col = 'smp_id'
+                elif penetrometer == 'scope' and 'scope_id' in ms_df.columns: 
+                    prof_col = 'scope_id'
+                elif penetrometer == 'ram':
+                    prof_col = 'sram_id'
+                
                 # find the row of pen_cleaning_filled that matches id and layer boundaries
                 match = ms_df[
                     (ms_df[id_col] == pid) &
+                    (ms_df[prof_col] == profile_filename) &
                     (np.isclose(ms_df['top_cm'], top, atol=0.1)) &
                     (np.isclose(ms_df[bot_col], bottom, atol=0.1))
                 ]
+                
+                print(match)
+        
                 
                 if (penetrometer == 'ram') & (not match.empty):
                     t_mm = match['top_depth_cm'].iloc[0] * 10
