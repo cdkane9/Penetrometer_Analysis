@@ -126,7 +126,7 @@ def get_hardness(pen_df:pd.DataFrame, top:pd.Series, bottom:pd.Series, hs:float,
         delta = top - bottom
         
         t_depth = ((hs - top) + (0.15 * delta)) * 10
-        b_depth = ((hs - bottom) - (0.15 * delta))
+        b_depth = ((hs - bottom) - (0.15 * delta)) * 10
 
     layer_ix = pen_df.index[(pen_df['depth'] >= t_depth) &
                             (pen_df['depth'] <= b_depth)]
@@ -188,18 +188,8 @@ def layer_average_force(layers_df, penetrometer, ms_df=None):
     mean_forces_column = []
     loaded_cache = {}
     
-    ms_id_options = {
-        'smp': ['smp_id', 'profile_id', 'id'],
-        'scope': ['scope_id', 'profile_id', 'id'],
-        'ram': ['ram_id', 'sram_id', 'profile_id', 'id']
-    }
+    id_col = 'id' if ms_df is not None and 'id' in ms_df.columns else None
     
-    id_col = None
-    if ms_df is not None:
-        for col in ms_id_options[penetrometer]:
-            if col in ms_df.columns:
-                id_col = col 
-                break
     
     for idx, row in layers_df.iterrows():
         pid = row['profile_id']
@@ -237,25 +227,41 @@ def layer_average_force(layers_df, penetrometer, ms_df=None):
             
             # use manually identified depth of crusts and lenses
             actual_depths = None
-            if ms_df is not None and grain_type in ['MFcr', 'IF', 'IFil', np.nan] and id_col is not None:
+            
+            is_crust = grain_type in ['MFcr', 'IF', 'IFil']
+            
+            if ms_df is not None and is_crust and id_col is not None:
                 bot_col = 'bot_cm' if 'bot_cm' in ms_df.columns else 'bottom_cm'
+                
+                profile_filename = os.path.basename(path)
+                prof_col = None
+                if penetrometer == 'smp' and 'smp_id' in ms_df.columns: 
+                    prof_col = 'smp_id'
+                elif penetrometer == 'scope' and 'scope_id' in ms_df.columns: 
+                    prof_col = 'scope_id'
+                elif penetrometer == 'ram':
+                    prof_col = 'sram_id'
                 
                 # find the row of pen_cleaning_filled that matches id and layer boundaries
                 match = ms_df[
                     (ms_df[id_col] == pid) &
+                    (ms_df[prof_col] == profile_filename) &
                     (np.isclose(ms_df['top_cm'], top, atol=0.1)) &
                     (np.isclose(ms_df[bot_col], bottom, atol=0.1))
                 ]
                 
+                print(match)
+        
+                
                 if (penetrometer == 'ram') & (not match.empty):
                     t_mm = match['top_depth_cm'].iloc[0] * 10
-                    b_mm = match['bot_depth_cm'].iloc[0] * 10
+                    b_mm = match['bot_depth_mm'].iloc[0] * 10
                     if not pd.isna(t_mm) and not pd.isna(b_mm):
                         actual_depths = (t_mm, b_mm)
                 
                 elif (penetrometer in ['smp', 'scope']) & (not match.empty):
-                    t_mm = match['top_depth_cm'].iloc[0]
-                    b_mm = match['bot_depth_cm'].iloc[0]
+                    t_mm = match['top_depth_mm'].iloc[0]
+                    b_mm = match['bot_depth_mm'].iloc[0]
                     if not pd.isna(t_mm) and not pd.isna(b_mm):
                         actual_depths = (t_mm, b_mm)
                         
